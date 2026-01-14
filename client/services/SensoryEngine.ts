@@ -1,14 +1,34 @@
 import * as Haptics from 'expo-haptics';
 import { Platform } from 'react-native';
-import type { HapticPattern } from '@/types';
+import type { HapticPattern, PeakStyle } from '@/types';
+
+type SessionPhase = 'idle' | 'settle' | 'peak' | 'cool' | 'complete';
 
 class SensoryEngineService {
   private isVibrating = false;
   private vibrationInterval: ReturnType<typeof setTimeout> | null = null;
   private intensity: number = 0.5;
+  private snapDensity: number = 0.5;
+  private peakStyle: PeakStyle = 'max';
+  private currentPhase: SessionPhase = 'idle';
+  private currentPattern: HapticPattern = 'standard';
+  private syncClock: number = 0;
+  private lastHapticTime: number = 0;
 
   setIntensity(value: number) {
     this.intensity = Math.max(0, Math.min(1, value));
+  }
+
+  setSnapDensity(value: number) {
+    this.snapDensity = Math.max(0.1, Math.min(1, value));
+  }
+
+  setPeakStyle(style: PeakStyle) {
+    this.peakStyle = style;
+  }
+
+  updatePhase(phase: SessionPhase) {
+    this.currentPhase = phase;
   }
 
   async playStartSound() {
@@ -62,81 +82,131 @@ class SensoryEngineService {
     }
   }
 
-  async startPattern(pattern: HapticPattern) {
+  async startPattern(pattern: HapticPattern, phase?: SessionPhase) {
     if (Platform.OS === 'web') return;
     
     this.stopPattern();
     this.isVibrating = true;
+    this.currentPattern = pattern;
+    this.currentPhase = phase || 'settle';
+    this.syncClock = Date.now();
 
-    const runPattern = async () => {
-      if (!this.isVibrating) return;
-
-      switch (pattern) {
-        case 'standard':
-          await this.runStandardPattern();
-          break;
-        case 'gentle-wave':
-          await this.runGentleWavePattern();
-          break;
-        case 'soft-pulse':
-          await this.runSoftPulsePattern();
-          break;
-      }
-    };
-
-    runPattern();
+    this.runSynchronizedPattern();
   }
 
-  private async runStandardPattern() {
+  private async runSynchronizedPattern() {
     if (!this.isVibrating) return;
-    
-    const baseDelay = 800 - (this.intensity * 400);
-    
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    
-    this.vibrationInterval = setTimeout(async () => {
-      if (this.isVibrating) {
-        await this.runStandardPattern();
-      }
-    }, baseDelay);
-  }
 
-  private async runGentleWavePattern() {
-    if (!this.isVibrating) return;
+    const now = Date.now();
+    const elapsed = now - this.syncClock;
     
-    const sequence = [
-      { style: Haptics.ImpactFeedbackStyle.Light, delay: 150 },
-      { style: Haptics.ImpactFeedbackStyle.Light, delay: 150 },
-      { style: Haptics.ImpactFeedbackStyle.Medium, delay: 200 },
-      { style: Haptics.ImpactFeedbackStyle.Light, delay: 150 },
-      { style: Haptics.ImpactFeedbackStyle.Light, delay: 600 },
-    ];
+    const phaseMultiplier = this.getPhaseMultiplier();
+    const densityMultiplier = 0.5 + this.snapDensity * 0.5;
+    
+    const baseInterval = this.getBaseInterval();
+    const adjustedInterval = baseInterval / (phaseMultiplier * densityMultiplier);
 
-    for (const step of sequence) {
-      if (!this.isVibrating) break;
-      await Haptics.impactAsync(step.style);
-      await this.delay(step.delay * (1.5 - this.intensity * 0.5));
+    if (now - this.lastHapticTime >= adjustedInterval) {
+      await this.executeHapticForPhase();
+      this.lastHapticTime = now;
     }
 
-    if (this.isVibrating) {
-      this.vibrationInterval = setTimeout(() => this.runGentleWavePattern(), 100);
+    this.vibrationInterval = setTimeout(() => this.runSynchronizedPattern(), 16);
+  }
+
+  private getPhaseMultiplier(): number {
+    switch (this.currentPhase) {
+      case 'settle':
+        return 0.7;
+      case 'peak':
+        return this.peakStyle === 'max' ? 1.5 : 1.2;
+      case 'cool':
+        return 0.5;
+      default:
+        return 0.6;
     }
   }
 
-  private async runSoftPulsePattern() {
-    if (!this.isVibrating) return;
-    
-    const pulseDelay = 1200 - (this.intensity * 600);
-    
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    await this.delay(100);
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    
-    this.vibrationInterval = setTimeout(async () => {
-      if (this.isVibrating) {
-        await this.runSoftPulsePattern();
+  private getBaseInterval(): number {
+    switch (this.currentPattern) {
+      case 'standard':
+        return 800 - (this.intensity * 400);
+      case 'gentle-wave':
+        return 1000 - (this.intensity * 300);
+      case 'soft-pulse':
+        return 1200 - (this.intensity * 400);
+      default:
+        return 800;
+    }
+  }
+
+  private async executeHapticForPhase() {
+    if (!this.isVibrating || Platform.OS === 'web') return;
+
+    try {
+      switch (this.currentPhase) {
+        case 'settle':
+          await this.executeSettleHaptic();
+          break;
+        case 'peak':
+          await this.executePeakHaptic();
+          break;
+        case 'cool':
+          await this.executeCoolHaptic();
+          break;
+        default:
+          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       }
-    }, pulseDelay);
+    } catch (error) {
+      console.log('Haptic execution failed');
+    }
+  }
+
+  private async executeSettleHaptic() {
+    const style = this.intensity > 0.7 
+      ? Haptics.ImpactFeedbackStyle.Medium 
+      : Haptics.ImpactFeedbackStyle.Light;
+    
+    await Haptics.impactAsync(style);
+    
+    if (this.currentPattern === 'gentle-wave') {
+      await this.delay(80);
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  }
+
+  private async executePeakHaptic() {
+    if (this.peakStyle === 'max') {
+      const style = this.intensity > 0.5 
+        ? Haptics.ImpactFeedbackStyle.Heavy 
+        : Haptics.ImpactFeedbackStyle.Medium;
+      
+      await Haptics.impactAsync(style);
+      
+      if (this.snapDensity > 0.6) {
+        await this.delay(50);
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }
+    } else {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      await this.delay(40);
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      
+      if (this.snapDensity > 0.7) {
+        await this.delay(60);
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+    }
+  }
+
+  private async executeCoolHaptic() {
+    const style = Haptics.ImpactFeedbackStyle.Light;
+    await Haptics.impactAsync(style);
+    
+    if (this.currentPattern === 'soft-pulse') {
+      await this.delay(100);
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
   }
 
   private delay(ms: number): Promise<void> {
@@ -149,10 +219,23 @@ class SensoryEngineService {
       clearTimeout(this.vibrationInterval);
       this.vibrationInterval = null;
     }
+    this.currentPhase = 'idle';
   }
 
   async cleanup() {
     this.stopPattern();
+  }
+
+  getSyncInfo() {
+    return {
+      isVibrating: this.isVibrating,
+      currentPhase: this.currentPhase,
+      currentPattern: this.currentPattern,
+      intensity: this.intensity,
+      snapDensity: this.snapDensity,
+      peakStyle: this.peakStyle,
+      elapsedMs: Date.now() - this.syncClock,
+    };
   }
 }
 

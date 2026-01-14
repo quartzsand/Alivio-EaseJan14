@@ -2,22 +2,63 @@ export type HapticPattern = 'standard' | 'gentle-wave' | 'soft-pulse';
 
 export type ComfortRating = 1 | 2 | 3 | 4 | 5;
 
+export type SessionSite = 
+  | 'arm-left' 
+  | 'arm-right' 
+  | 'thigh-left' 
+  | 'thigh-right' 
+  | 'abdomen-left' 
+  | 'abdomen-right'
+  | 'other';
+
+export type SessionDuration = 24 | 30 | 42;
+
+export type PeakStyle = 'max' | 'snap';
+
+export interface SessionPhases {
+  settle: number;
+  peak: number;
+  cool: number;
+}
+
+export const SESSION_PHASE_PRESETS: Record<SessionDuration, SessionPhases> = {
+  24: { settle: 12, peak: 6, cool: 6 },
+  30: { settle: 18, peak: 6, cool: 6 },
+  42: { settle: 18, peak: 12, cool: 12 },
+};
+
 export interface SessionLog {
   id: string;
   date: string;
   duration: number;
   hapticPattern: HapticPattern;
   comfortRating: ComfortRating;
+  site?: SessionSite;
   notes?: string;
+}
+
+export interface SiteTuning {
+  hapticIntensity: number;
+  snapDensity: number;
+  peakStyle: PeakStyle;
+  audioVolume: number;
 }
 
 export interface UserPreferences {
   displayName: string;
   hapticIntensity: number;
   audioEnabled: boolean;
+  audioVolume: number;
   avatarId: string;
   dragonflyVariant: 'blue' | 'white';
   theme: 'light' | 'dark' | 'auto';
+  debugMode: boolean;
+  peakStyle: PeakStyle;
+  snapDensity: number;
+  selectedDuration: SessionDuration;
+  lastSelectedSite?: SessionSite;
+  siteTunings: Partial<Record<SessionSite, SiteTuning>>;
+  discoveryCompleted: boolean;
 }
 
 export interface OnboardingState {
@@ -45,4 +86,20 @@ export const HAPTIC_PATTERN_LABELS: Record<HapticPattern, string> = {
   'standard': 'Standard',
   'gentle-wave': 'Gentle Wave',
   'soft-pulse': 'Soft Pulse',
+};
+
+export const SESSION_SITE_LABELS: Record<SessionSite, string> = {
+  'arm-left': 'Left Arm',
+  'arm-right': 'Right Arm',
+  'thigh-left': 'Left Thigh',
+  'thigh-right': 'Right Thigh',
+  'abdomen-left': 'Left Abdomen',
+  'abdomen-right': 'Right Abdomen',
+  'other': 'Other',
+};
+
+export const SESSION_DURATION_LABELS: Record<SessionDuration, string> = {
+  24: '24 sec (Quick)',
+  30: '30 sec (Standard)',
+  42: '42 sec (Extended)',
 };

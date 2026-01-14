@@ -13,6 +13,7 @@ import { Card } from "@/components/Card";
 import { Colors, Spacing, BorderRadius, Typography } from "@/constants/theme";
 import { useApp } from "@/context/AppContext";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
+import type { PeakStyle } from "@/types";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -22,13 +23,34 @@ export default function SettingsScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { preferences, updatePreferences, clearSessions, resetApp } = useApp();
   const [hapticIntensity, setHapticIntensity] = useState(preferences.hapticIntensity);
+  const [audioVolume, setAudioVolume] = useState(preferences.audioVolume ?? 0.7);
+  const [snapDensity, setSnapDensity] = useState(preferences.snapDensity ?? 0.5);
 
-  const handleSliderChange = async (value: number) => {
+  const handleHapticSliderChange = async (value: number) => {
     setHapticIntensity(value);
   };
 
-  const handleSliderComplete = async (value: number) => {
+  const handleHapticSliderComplete = async (value: number) => {
     await updatePreferences({ hapticIntensity: value });
+    if (Platform.OS !== "web") {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  };
+
+  const handleAudioVolumeChange = async (value: number) => {
+    setAudioVolume(value);
+  };
+
+  const handleAudioVolumeComplete = async (value: number) => {
+    await updatePreferences({ audioVolume: value });
+  };
+
+  const handleSnapDensityChange = async (value: number) => {
+    setSnapDensity(value);
+  };
+
+  const handleSnapDensityComplete = async (value: number) => {
+    await updatePreferences({ snapDensity: value });
     if (Platform.OS !== "web") {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
@@ -39,6 +61,24 @@ export default function SettingsScreen() {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
     await updatePreferences({ audioEnabled: value });
+  };
+
+  const handleDebugToggle = async (value: boolean) => {
+    if (Platform.OS !== "web") {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    await updatePreferences({ debugMode: value });
+  };
+
+  const handlePeakStyleChange = async (style: PeakStyle) => {
+    if (Platform.OS !== "web") {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    await updatePreferences({ peakStyle: style });
+  };
+
+  const handleOpenDiscovery = () => {
+    navigation.navigate("DiscoveryWizard", {});
   };
 
   const handleClearHistory = () => {
@@ -104,7 +144,7 @@ export default function SettingsScreen() {
     >
       <ThemedText style={styles.title}>Settings</ThemedText>
 
-      <ThemedText style={styles.sectionTitle}>Preferences</ThemedText>
+      <ThemedText style={styles.sectionTitle}>Haptic Preferences</ThemedText>
       <Card style={styles.card}>
         <View style={styles.settingRow}>
           <ThemedText style={styles.settingLabel}>Haptic Intensity</ThemedText>
@@ -116,8 +156,8 @@ export default function SettingsScreen() {
             minimumValue={0.1}
             maximumValue={1}
             value={hapticIntensity}
-            onValueChange={handleSliderChange}
-            onSlidingComplete={handleSliderComplete}
+            onValueChange={handleHapticSliderChange}
+            onSlidingComplete={handleHapticSliderComplete}
             minimumTrackTintColor={Colors.light.primary}
             maximumTrackTintColor={Colors.light.border}
             thumbTintColor={Colors.light.primary}
@@ -128,6 +168,64 @@ export default function SettingsScreen() {
 
         <View style={styles.divider} />
 
+        <View style={styles.settingRow}>
+          <View style={styles.settingInfo}>
+            <ThemedText style={styles.settingLabel}>Peak Style</ThemedText>
+            <ThemedText style={styles.settingDescription}>
+              How haptics behave during peak phase
+            </ThemedText>
+          </View>
+        </View>
+        <View style={styles.segmented}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.segButton,
+              preferences.peakStyle === "max" && styles.segButtonSelected,
+              pressed && styles.segButtonPressed,
+            ]}
+            onPress={() => handlePeakStyleChange("max")}
+            testID="button-peak-max"
+          >
+            <ThemedText style={[styles.segButtonText, preferences.peakStyle === "max" && styles.segButtonTextSelected]}>Max</ThemedText>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [
+              styles.segButton,
+              preferences.peakStyle === "snap" && styles.segButtonSelected,
+              pressed && styles.segButtonPressed,
+            ]}
+            onPress={() => handlePeakStyleChange("snap")}
+            testID="button-peak-snap"
+          >
+            <ThemedText style={[styles.segButtonText, preferences.peakStyle === "snap" && styles.segButtonTextSelected]}>Snap</ThemedText>
+          </Pressable>
+        </View>
+
+        <View style={styles.divider} />
+
+        <View style={styles.settingRow}>
+          <ThemedText style={styles.settingLabel}>Snap Density</ThemedText>
+        </View>
+        <View style={styles.sliderContainer}>
+          <ThemedText style={styles.sliderLabel}>Sparse</ThemedText>
+          <Slider
+            style={styles.slider}
+            minimumValue={0.1}
+            maximumValue={1}
+            value={snapDensity}
+            onValueChange={handleSnapDensityChange}
+            onSlidingComplete={handleSnapDensityComplete}
+            minimumTrackTintColor={Colors.light.accent}
+            maximumTrackTintColor={Colors.light.border}
+            thumbTintColor={Colors.light.accent}
+            testID="slider-snap-density"
+          />
+          <ThemedText style={styles.sliderLabel}>Dense</ThemedText>
+        </View>
+      </Card>
+
+      <ThemedText style={styles.sectionTitle}>Audio Preferences</ThemedText>
+      <Card style={styles.card}>
         <View style={styles.settingRow}>
           <View style={styles.settingInfo}>
             <ThemedText style={styles.settingLabel}>Sound Effects</ThemedText>
@@ -144,8 +242,34 @@ export default function SettingsScreen() {
           />
         </View>
 
-        <View style={styles.divider} />
+        {preferences.audioEnabled && (
+          <>
+            <View style={styles.divider} />
+            <View style={styles.settingRow}>
+              <ThemedText style={styles.settingLabel}>Audio Volume</ThemedText>
+            </View>
+            <View style={styles.sliderContainer}>
+              <ThemedText style={styles.sliderLabel}>Low</ThemedText>
+              <Slider
+                style={styles.slider}
+                minimumValue={0.1}
+                maximumValue={1}
+                value={audioVolume}
+                onValueChange={handleAudioVolumeChange}
+                onSlidingComplete={handleAudioVolumeComplete}
+                minimumTrackTintColor={Colors.light.primary}
+                maximumTrackTintColor={Colors.light.border}
+                thumbTintColor={Colors.light.primary}
+                testID="slider-audio-volume"
+              />
+              <ThemedText style={styles.sliderLabel}>High</ThemedText>
+            </View>
+          </>
+        )}
+      </Card>
 
+      <ThemedText style={styles.sectionTitle}>Visual Preferences</ThemedText>
+      <Card style={styles.card}>
         <View style={styles.settingRow}>
           <View style={styles.settingText}>
             <ThemedText style={styles.settingLabel}>Dragonfly</ThemedText>
@@ -153,7 +277,6 @@ export default function SettingsScreen() {
               Choose your dragonfly style for sessions
             </ThemedText>
           </View>
-
           <View style={styles.segmented}>
             <Pressable
               style={({ pressed }) => [
@@ -178,6 +301,41 @@ export default function SettingsScreen() {
               <ThemedText style={[styles.segButtonText, preferences.dragonflyVariant === "white" && styles.segButtonTextSelected]}>White</ThemedText>
             </Pressable>
           </View>
+        </View>
+      </Card>
+
+      <ThemedText style={styles.sectionTitle}>Tuning</ThemedText>
+      <Card style={styles.card}>
+        <Pressable
+          style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}
+          onPress={handleOpenDiscovery}
+          testID="button-discovery-wizard"
+        >
+          <Feather name="sliders" size={20} color={Colors.light.primary} />
+          <ThemedText style={styles.menuItemText}>Discovery Wizard</ThemedText>
+          <Feather name="chevron-right" size={20} color={Colors.light.textSecondary} />
+        </Pressable>
+        <ThemedText style={styles.menuItemDescription}>
+          Fine-tune settings for each site
+        </ThemedText>
+      </Card>
+
+      <ThemedText style={styles.sectionTitle}>Developer</ThemedText>
+      <Card style={styles.card}>
+        <View style={styles.settingRow}>
+          <View style={styles.settingInfo}>
+            <ThemedText style={styles.settingLabel}>Debug Mode</ThemedText>
+            <ThemedText style={styles.settingDescription}>
+              Show technical information during sessions
+            </ThemedText>
+          </View>
+          <Switch
+            value={preferences.debugMode}
+            onValueChange={handleDebugToggle}
+            trackColor={{ false: Colors.light.border, true: Colors.light.accent }}
+            thumbColor={Colors.light.surface}
+            testID="switch-debug"
+          />
         </View>
       </Card>
 
@@ -233,7 +391,7 @@ export default function SettingsScreen() {
         </Pressable>
       </Card>
 
-      <ThemedText style={styles.version}>Alivio Ease v1.0.0</ThemedText>
+      <ThemedText style={styles.version}>Alivio Ease v0.15</ThemedText>
     </KeyboardAwareScrollViewCompat>
   );
 }
@@ -268,6 +426,9 @@ const styles = StyleSheet.create({
   settingInfo: {
     flex: 1,
   },
+  settingText: {
+    flex: 1,
+  },
   settingLabel: {
     ...Typography.body,
     color: Colors.light.text,
@@ -295,7 +456,35 @@ const styles = StyleSheet.create({
   divider: {
     height: 1,
     backgroundColor: Colors.light.border,
-    marginVertical: Spacing.md,
+    marginVertical: Spacing.lg,
+    opacity: 0.6,
+  },
+  segmented: {
+    flexDirection: "row",
+    backgroundColor: Colors.light.surface,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    overflow: "hidden",
+    marginTop: Spacing.sm,
+  },
+  segButton: {
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    backgroundColor: "transparent",
+  },
+  segButtonSelected: {
+    backgroundColor: Colors.light.primary,
+  },
+  segButtonPressed: {
+    opacity: 0.85,
+  },
+  segButtonText: {
+    ...Typography.caption,
+    color: Colors.light.text,
+  },
+  segButtonTextSelected: {
+    color: Colors.light.buttonText,
   },
   menuItem: {
     flexDirection: "row",
@@ -311,44 +500,16 @@ const styles = StyleSheet.create({
     flex: 1,
     marginLeft: Spacing.md,
   },
+  menuItemDescription: {
+    ...Typography.caption,
+    color: Colors.light.textSecondary,
+    marginTop: Spacing.xs,
+  },
   warningText: {
     color: "#E67E22",
   },
   dangerText: {
     color: "#E74C3C",
-  },
-
-  divider: {
-    height: 1,
-    backgroundColor: Colors.light.border,
-    marginVertical: Spacing.lg,
-    opacity: 0.6,
-  },
-  segmented: {
-    flexDirection: "row",
-    backgroundColor: Colors.light.surface,
-    borderRadius: BorderRadius.lg,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    overflow: "hidden",
-  },
-  segButton: {
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    backgroundColor: "transparent",
-  },
-  segButtonSelected: {
-    backgroundColor: Colors.light.primary,
-  },
-  segButtonPressed: {
-    opacity: 0.85,
-  },
-  segButtonText: {
-    ...Typography.buttonSmall,
-    color: Colors.light.text,
-  },
-  segButtonTextSelected: {
-    color: Colors.light.buttonText,
   },
   version: {
     ...Typography.caption,

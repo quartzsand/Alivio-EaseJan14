@@ -14,16 +14,39 @@ import { Colors, Spacing, BorderRadius, Typography, Shadows } from "@/constants/
 import { WELLNESS_TIPS } from "@/constants/disclaimers";
 import { useApp } from "@/context/AppContext";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
+import type { SessionSite, SessionDuration } from "@/types";
+import { SESSION_SITE_LABELS, SESSION_DURATION_LABELS } from "@/types";
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
+
+const SITES: SessionSite[] = [
+  'arm-left', 'arm-right', 
+  'thigh-left', 'thigh-right', 
+  'abdomen-left', 'abdomen-right',
+  'other'
+];
+
+const DURATIONS: SessionDuration[] = [24, 30, 42];
+
+const SITE_ICONS: Record<SessionSite, string> = {
+  'arm-left': 'circle',
+  'arm-right': 'circle',
+  'thigh-left': 'circle',
+  'thigh-right': 'circle',
+  'abdomen-left': 'circle',
+  'abdomen-right': 'circle',
+  'other': 'more-horizontal',
+};
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const tabBarHeight = useBottomTabBarHeight();
   const navigation = useNavigation<NavigationProp>();
-  const { preferences, sessionsThisWeek } = useApp();
+  const { preferences, sessionsThisWeek, updatePreferences } = useApp();
   const [tipIndex, setTipIndex] = useState(0);
   const [showTip, setShowTip] = useState(true);
+  const [selectedSite, setSelectedSite] = useState<SessionSite | undefined>(preferences.lastSelectedSite);
+  const [selectedDuration, setSelectedDuration] = useState<SessionDuration>(preferences.selectedDuration || 24);
   const fadeAnim = useState(new Animated.Value(0))[0];
 
   useEffect(() => {
@@ -35,6 +58,15 @@ export default function HomeScreen() {
     }).start();
   }, []);
 
+  useEffect(() => {
+    if (preferences.lastSelectedSite) {
+      setSelectedSite(preferences.lastSelectedSite);
+    }
+    if (preferences.selectedDuration) {
+      setSelectedDuration(preferences.selectedDuration);
+    }
+  }, [preferences.lastSelectedSite, preferences.selectedDuration]);
+
   const displayName = preferences.displayName || "Friend";
   const greeting = getGreeting();
 
@@ -45,11 +77,30 @@ export default function HomeScreen() {
     return "Good evening";
   }
 
+  const handleSiteSelect = async (site: SessionSite) => {
+    if (Platform.OS !== "web") {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    setSelectedSite(site);
+    await updatePreferences({ lastSelectedSite: site });
+  };
+
+  const handleDurationSelect = async (duration: SessionDuration) => {
+    if (Platform.OS !== "web") {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    setSelectedDuration(duration);
+    await updatePreferences({ selectedDuration: duration });
+  };
+
   const handleStartSession = async () => {
     if (Platform.OS !== "web") {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-    navigation.navigate("Session");
+    navigation.navigate("Session", { 
+      site: selectedSite,
+      duration: selectedDuration 
+    });
   };
 
   const dismissTip = () => {
@@ -84,6 +135,73 @@ export default function HomeScreen() {
                 <ThemedText style={styles.statValue}>{sessionsThisWeek}</ThemedText>
                 <ThemedText style={styles.statLabel}>Sessions this week</ThemedText>
               </View>
+            </View>
+          </Card>
+
+          <ThemedText style={styles.sectionTitle}>Select Site</ThemedText>
+          <Card style={styles.siteCard}>
+            <View style={styles.siteGrid}>
+              {SITES.map((site) => (
+                <Pressable
+                  key={site}
+                  style={({ pressed }) => [
+                    styles.siteButton,
+                    selectedSite === site && styles.siteButtonSelected,
+                    pressed && styles.siteButtonPressed,
+                  ]}
+                  onPress={() => handleSiteSelect(site)}
+                  testID={`button-site-${site}`}
+                >
+                  <Feather 
+                    name={SITE_ICONS[site] as any} 
+                    size={16} 
+                    color={selectedSite === site ? Colors.light.buttonText : Colors.light.textSecondary} 
+                  />
+                  <ThemedText
+                    style={[
+                      styles.siteButtonText,
+                      selectedSite === site && styles.siteButtonTextSelected,
+                    ]}
+                  >
+                    {SESSION_SITE_LABELS[site]}
+                  </ThemedText>
+                </Pressable>
+              ))}
+            </View>
+          </Card>
+
+          <ThemedText style={styles.sectionTitle}>Session Duration</ThemedText>
+          <Card style={styles.durationCard}>
+            <View style={styles.durationRow}>
+              {DURATIONS.map((duration) => (
+                <Pressable
+                  key={duration}
+                  style={({ pressed }) => [
+                    styles.durationButton,
+                    selectedDuration === duration && styles.durationButtonSelected,
+                    pressed && styles.durationButtonPressed,
+                  ]}
+                  onPress={() => handleDurationSelect(duration)}
+                  testID={`button-duration-${duration}`}
+                >
+                  <ThemedText
+                    style={[
+                      styles.durationValue,
+                      selectedDuration === duration && styles.durationValueSelected,
+                    ]}
+                  >
+                    {duration}s
+                  </ThemedText>
+                  <ThemedText
+                    style={[
+                      styles.durationLabel,
+                      selectedDuration === duration && styles.durationLabelSelected,
+                    ]}
+                  >
+                    {duration === 24 ? 'Quick' : duration === 30 ? 'Standard' : 'Extended'}
+                  </ThemedText>
+                </Pressable>
+              ))}
             </View>
           </Card>
 
@@ -176,6 +294,84 @@ const styles = StyleSheet.create({
   statLabel: {
     ...Typography.caption,
     color: Colors.light.textSecondary,
+  },
+  sectionTitle: {
+    ...Typography.button,
+    color: Colors.light.textSecondary,
+    marginBottom: Spacing.sm,
+    marginLeft: Spacing.xs,
+  },
+  siteCard: {
+    marginBottom: Spacing.lg,
+  },
+  siteGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.sm,
+  },
+  siteButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.light.surface,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    gap: Spacing.xs,
+  },
+  siteButtonSelected: {
+    backgroundColor: Colors.light.primary,
+    borderColor: Colors.light.primary,
+  },
+  siteButtonPressed: {
+    opacity: 0.7,
+  },
+  siteButtonText: {
+    ...Typography.caption,
+    color: Colors.light.text,
+  },
+  siteButtonTextSelected: {
+    color: Colors.light.buttonText,
+  },
+  durationCard: {
+    marginBottom: Spacing.lg,
+  },
+  durationRow: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+  },
+  durationButton: {
+    flex: 1,
+    alignItems: "center",
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.light.surface,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+  },
+  durationButtonSelected: {
+    backgroundColor: Colors.light.primary,
+    borderColor: Colors.light.primary,
+  },
+  durationButtonPressed: {
+    opacity: 0.7,
+  },
+  durationValue: {
+    ...Typography.title,
+    color: Colors.light.text,
+  },
+  durationValueSelected: {
+    color: Colors.light.buttonText,
+  },
+  durationLabel: {
+    ...Typography.caption,
+    color: Colors.light.textSecondary,
+    marginTop: Spacing.xs,
+  },
+  durationLabelSelected: {
+    color: Colors.light.buttonText,
+    opacity: 0.9,
   },
   tipCard: {
     backgroundColor: Colors.light.accent + "20",

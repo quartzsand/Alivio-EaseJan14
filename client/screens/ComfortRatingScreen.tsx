@@ -8,7 +8,7 @@ import * as Haptics from "expo-haptics";
 import { ThemedText } from "@/components/ThemedText";
 import { Colors, Spacing, BorderRadius, Typography } from "@/constants/theme";
 import { useApp } from "@/context/AppContext";
-import { COMFORT_LABELS } from "@/types";
+import { COMFORT_LABELS, SESSION_SITE_LABELS } from "@/types";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { ComfortRating, SessionLog } from "@/types";
 
@@ -22,7 +22,7 @@ export default function ComfortRatingScreen() {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<RouteProp>();
   const { addSession } = useApp();
-  const { duration, hapticPattern } = route.params;
+  const { duration, hapticPattern, site } = route.params;
   
   const [selectedRating, setSelectedRating] = useState<ComfortRating | null>(null);
   const [showNotes, setShowNotes] = useState(false);
@@ -48,6 +48,7 @@ export default function ComfortRatingScreen() {
       duration,
       hapticPattern,
       comfortRating: selectedRating,
+      site: site,
       notes: notes.trim() || undefined,
     };
 
@@ -62,6 +63,13 @@ export default function ComfortRatingScreen() {
         <ThemedText style={styles.subtitle}>
           Rate your comfort level after this session
         </ThemedText>
+
+        {site && (
+          <View style={styles.siteIndicator}>
+            <Feather name="map-pin" size={14} color={Colors.light.textSecondary} />
+            <ThemedText style={styles.siteText}>{SESSION_SITE_LABELS[site]}</ThemedText>
+          </View>
+        )}
 
         <View style={styles.ratingsContainer}>
           {RATINGS.map((rating) => (
@@ -150,7 +158,18 @@ const styles = StyleSheet.create({
     ...Typography.body,
     color: Colors.light.textSecondary,
     textAlign: "center",
-    marginBottom: Spacing["2xl"],
+    marginBottom: Spacing.lg,
+  },
+  siteIndicator: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: Spacing.xl,
+    gap: Spacing.xs,
+  },
+  siteText: {
+    ...Typography.caption,
+    color: Colors.light.textSecondary,
   },
   ratingsContainer: {
     gap: Spacing.md,

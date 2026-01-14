@@ -7,18 +7,20 @@ import SessionScreen from "@/screens/SessionScreen";
 import ComfortRatingScreen from "@/screens/ComfortRatingScreen";
 import DisclaimerModalScreen from "@/screens/DisclaimerModalScreen";
 import AboutScreen from "@/screens/AboutScreen";
+import DiscoveryWizardScreen from "@/screens/DiscoveryWizardScreen";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 import { useApp } from "@/context/AppContext";
 import { Colors } from "@/constants/theme";
-import type { HapticPattern } from "@/types";
+import type { HapticPattern, SessionSite, SessionDuration } from "@/types";
 
 export type RootStackParamList = {
   Onboarding: undefined;
   Main: undefined;
-  Session: undefined;
-  ComfortRating: { duration: number; hapticPattern: HapticPattern };
+  Session: { site?: SessionSite; duration?: SessionDuration };
+  ComfortRating: { duration: number; hapticPattern: HapticPattern; site?: SessionSite };
   DisclaimerModal: undefined;
   About: undefined;
+  DiscoveryWizard: { site?: SessionSite };
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -85,6 +87,14 @@ export default function RootStackNavigator() {
             options={{
               presentation: "modal",
               headerTitle: "About Alivio Ease",
+            }}
+          />
+          <Stack.Screen
+            name="DiscoveryWizard"
+            component={DiscoveryWizardScreen}
+            options={{
+              presentation: "modal",
+              headerTitle: "Tune Your Experience",
             }}
           />
         </>

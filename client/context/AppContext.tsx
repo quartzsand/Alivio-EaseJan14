@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { StorageService } from '@/services/StorageService';
-import type { SessionLog, UserPreferences, OnboardingState } from '@/types';
+import type { SessionLog, UserPreferences, OnboardingState, SessionSite, SiteTuning } from '@/types';
 
 interface AppContextType {
   isLoading: boolean;
@@ -14,6 +14,8 @@ interface AppContextType {
   clearSessions: () => Promise<void>;
   resetApp: () => Promise<void>;
   refreshData: () => Promise<void>;
+  getSiteTuning: (site: SessionSite) => SiteTuning | undefined;
+  saveSiteTuning: (site: SessionSite, tuning: SiteTuning) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -22,8 +24,16 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   displayName: '',
   hapticIntensity: 0.5,
   audioEnabled: true,
+  audioVolume: 0.7,
   avatarId: 'blue',
+  dragonflyVariant: 'blue',
   theme: 'light',
+  debugMode: false,
+  peakStyle: 'max',
+  snapDensity: 0.5,
+  selectedDuration: 24,
+  siteTunings: {},
+  discoveryCompleted: false,
 };
 
 const DEFAULT_ONBOARDING: OnboardingState = {
@@ -98,6 +108,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setSessionsThisWeek(0);
   }, []);
 
+  const getSiteTuning = useCallback((site: SessionSite): SiteTuning | undefined => {
+    return preferences.siteTunings[site];
+  }, [preferences.siteTunings]);
+
+  const saveSiteTuning = useCallback(async (site: SessionSite, tuning: SiteTuning) => {
+    const updatedTunings = { ...preferences.siteTunings, [site]: tuning };
+    await updatePreferences({ siteTunings: updatedTunings });
+  }, [preferences.siteTunings, updatePreferences]);
+
   return (
     <AppContext.Provider
       value={{
@@ -112,6 +131,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         clearSessions,
         resetApp,
         refreshData,
+        getSiteTuning,
+        saveSiteTuning,
       }}
     >
       {children}

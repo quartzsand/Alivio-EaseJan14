@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { SessionLog, UserPreferences, OnboardingState, AppState } from '@/types';
+import type { SessionLog, UserPreferences, OnboardingState, AppState, SessionSite, SiteTuning } from '@/types';
 
 const STORAGE_KEYS = {
   SESSIONS: '@alivio_sessions',
@@ -11,9 +11,16 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   displayName: '',
   hapticIntensity: 0.5,
   audioEnabled: true,
+  audioVolume: 0.7,
   avatarId: 'blue',
   dragonflyVariant: 'blue',
   theme: 'light',
+  debugMode: false,
+  peakStyle: 'max',
+  snapDensity: 0.5,
+  selectedDuration: 24,
+  siteTunings: {},
+  discoveryCompleted: false,
 };
 
 const DEFAULT_ONBOARDING: OnboardingState = {
@@ -70,6 +77,17 @@ class StorageServiceClass {
     } catch (error) {
       console.error('Error saving preferences:', error);
     }
+  }
+
+  async getSiteTuning(site: SessionSite): Promise<SiteTuning | undefined> {
+    const prefs = await this.getPreferences();
+    return prefs.siteTunings[site];
+  }
+
+  async saveSiteTuning(site: SessionSite, tuning: SiteTuning): Promise<void> {
+    const prefs = await this.getPreferences();
+    const updatedTunings = { ...prefs.siteTunings, [site]: tuning };
+    await this.savePreferences({ siteTunings: updatedTunings });
   }
 
   async getOnboarding(): Promise<OnboardingState> {
