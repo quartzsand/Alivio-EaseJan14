@@ -10,7 +10,7 @@ import * as Haptics from "expo-haptics";
 import { ThemedText } from "@/components/ThemedText";
 import { DragonflyFlight } from "@/components/DragonflyFlight";
 import { Colors, Spacing, BorderRadius, Typography } from "@/constants/theme";
-import { SensoryEngine } from "@/services/SensoryEngine";
+import { HapticsService } from "@/services/HapticsService";
 import { useSessionAudio } from "@/hooks/useSessionAudio";
 import { useLofiLoop } from "@/hooks/useLofiLoop";
 import { useApp } from "@/context/AppContext";
@@ -63,9 +63,9 @@ export default function SessionScreen() {
   const dragonflyIntensity = effectiveIntensity;
 
   useEffect(() => {
-    SensoryEngine.setIntensity(effectiveIntensity);
-    SensoryEngine.setSnapDensity(effectiveSnapDensity);
-    SensoryEngine.setPeakStyle(effectivePeakStyle);
+    HapticsService.setIntensity(effectiveIntensity);
+    HapticsService.setSnapDensity(effectiveSnapDensity);
+    HapticsService.setPeakStyle(effectivePeakStyle);
   }, [effectiveIntensity, effectiveSnapDensity, effectivePeakStyle]);
 
   useEffect(() => {
@@ -123,7 +123,7 @@ export default function SessionScreen() {
     ).start();
 
     return () => {
-      SensoryEngine.cleanup();
+      HapticsService.cleanup();
       if (timerRef.current) {
         clearInterval(timerRef.current);
       }
@@ -149,9 +149,9 @@ export default function SessionScreen() {
       await playStartSound();
       await startLofi();
     }
-    await SensoryEngine.playStartSound();
+    await HapticsService.playStartFeedback();
     
-    await SensoryEngine.startPattern(selectedPattern, 'settle');
+    await HapticsService.start(selectedPattern, 'settle');
     
     timerRef.current = setInterval(() => {
       setTimeElapsed((prev) => {
@@ -163,19 +163,19 @@ export default function SessionScreen() {
 
   useEffect(() => {
     if (isRunning && currentPhase !== 'idle' && currentPhase !== 'complete') {
-      SensoryEngine.updatePhase(currentPhase);
+      HapticsService.updatePhase(currentPhase);
     }
   }, [currentPhase, isRunning]);
 
   const stopSession = useCallback(async () => {
-    await stopLofi();
-    setIsRunning(false);
-    SensoryEngine.stopPattern();
-    
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
+    
+    HapticsService.stop();
+    await stopLofi();
+    setIsRunning(false);
     
     try {
       deactivateKeepAwake();
@@ -185,11 +185,7 @@ export default function SessionScreen() {
     if (preferences.audioEnabled) {
       await playCompleteSound();
     }
-    await SensoryEngine.playCompleteSound();
-    
-    if (Platform.OS !== "web") {
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    }
+    await HapticsService.playCompleteFeedback();
   }, [preferences.audioEnabled, playCompleteSound, stopLofi]);
 
   const handleEndSession = useCallback(async () => {
@@ -226,8 +222,8 @@ export default function SessionScreen() {
     setSelectedPattern(pattern);
     
     if (isRunning) {
-      SensoryEngine.stopPattern();
-      await SensoryEngine.startPattern(pattern, currentPhase);
+      HapticsService.stop();
+      await HapticsService.start(pattern, currentPhase);
     }
   };
 

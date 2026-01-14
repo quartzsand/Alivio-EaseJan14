@@ -11,7 +11,7 @@ import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { Colors, Spacing, BorderRadius, Typography } from "@/constants/theme";
 import { useApp } from "@/context/AppContext";
-import { SensoryEngine } from "@/services/SensoryEngine";
+import { HapticsService } from "@/services/HapticsService";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { SessionSite, SiteTuning, PeakStyle } from "@/types";
 import { SESSION_SITE_LABELS } from "@/types";
@@ -26,16 +26,53 @@ const SITES: SessionSite[] = [
   'other'
 ];
 
-type WizardStep = 'site-select' | 'intensity' | 'snap-density' | 'peak-style' | 'audio' | 'complete';
+type WizardStep = 'site-select' | 'trial-abc' | 'fine-tune' | 'audio' | 'complete';
+
+interface TrialPreset {
+  id: 'A' | 'B' | 'C';
+  label: string;
+  description: string;
+  intensity: number;
+  snapDensity: number;
+  peakStyle: PeakStyle;
+}
+
+const TRIAL_PRESETS: TrialPreset[] = [
+  {
+    id: 'A',
+    label: 'Gentle',
+    description: 'Light, steady pulses with gradual peak',
+    intensity: 0.4,
+    snapDensity: 0.3,
+    peakStyle: 'max',
+  },
+  {
+    id: 'B',
+    label: 'Balanced',
+    description: 'Medium intensity with rhythmic snaps',
+    intensity: 0.6,
+    snapDensity: 0.5,
+    peakStyle: 'snap',
+  },
+  {
+    id: 'C',
+    label: 'Strong',
+    description: 'Firm, pronounced feedback throughout',
+    intensity: 0.8,
+    snapDensity: 0.7,
+    peakStyle: 'max',
+  },
+];
 
 export default function DiscoveryWizardScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<DiscoveryRouteProp>();
-  const { preferences, saveSiteTuning, getSiteTuning, updatePreferences } = useApp();
+  const { preferences, saveSiteTuning, getSiteTuning, updatePreferences, onboarding } = useApp();
 
   const [step, setStep] = useState<WizardStep>('site-select');
   const [selectedSite, setSelectedSite] = useState<SessionSite | undefined>(route.params?.site);
+  const [selectedTrial, setSelectedTrial] = useState<'A' | 'B' | 'C' | null>(null);
   
   const [hapticIntensity, setHapticIntensity] = useState(0.5);
   const [snapDensity, setSnapDensity] = useState(0.5);
@@ -64,20 +101,51 @@ export default function DiscoveryWizardScreen() {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
     setSelectedSite(site);
-    setStep('intensity');
+    setStep('trial-abc');
   };
 
-  const handleTestHaptic = async () => {
-    SensoryEngine.setIntensity(hapticIntensity);
-    SensoryEngine.setSnapDensity(snapDensity);
-    SensoryEngine.setPeakStyle(peakStyle);
+  const handleTrialTest = async (preset: TrialPreset) => {
+    HapticsService.setIntensity(preset.intensity);
+    HapticsService.setSnapDensity(preset.snapDensity);
+    HapticsService.setPeakStyle(preset.peakStyle);
     
     if (Platform.OS !== "web") {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      await new Promise(resolve => setTimeout(resolve, 150));
+      await delay(100);
+      await Haptics.impactAsync(preset.peakStyle === 'max' ? Haptics.ImpactFeedbackStyle.Heavy : Haptics.ImpactFeedbackStyle.Medium);
+      await delay(80);
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      await new Promise(resolve => setTimeout(resolve, 100));
+      if (preset.snapDensity > 0.5) {
+        await delay(60);
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      }
+    }
+  };
+
+  const handleTrialSelect = async (trialId: 'A' | 'B' | 'C') => {
+    if (Platform.OS !== "web") {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    setSelectedTrial(trialId);
+    const preset = TRIAL_PRESETS.find(p => p.id === trialId);
+    if (preset) {
+      setHapticIntensity(preset.intensity);
+      setSnapDensity(preset.snapDensity);
+      setPeakStyle(preset.peakStyle);
+    }
+  };
+
+  const handleTestCurrent = async () => {
+    HapticsService.setIntensity(hapticIntensity);
+    HapticsService.setSnapDensity(snapDensity);
+    HapticsService.setPeakStyle(peakStyle);
+    
+    if (Platform.OS !== "web") {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      await delay(100);
+      await Haptics.impactAsync(peakStyle === 'max' ? Haptics.ImpactFeedbackStyle.Heavy : Haptics.ImpactFeedbackStyle.Medium);
+      await delay(80);
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
   };
 
@@ -85,7 +153,10 @@ export default function DiscoveryWizardScreen() {
     if (step === 'site-select' && !selectedSite) {
       return;
     }
-    const steps: WizardStep[] = ['site-select', 'intensity', 'snap-density', 'peak-style', 'audio', 'complete'];
+    if (step === 'trial-abc' && !selectedTrial) {
+      return;
+    }
+    const steps: WizardStep[] = ['site-select', 'trial-abc', 'fine-tune', 'audio', 'complete'];
     const currentIndex = steps.indexOf(step);
     if (currentIndex < steps.length - 1) {
       setStep(steps[currentIndex + 1]);
@@ -93,7 +164,7 @@ export default function DiscoveryWizardScreen() {
   };
 
   const handleBack = () => {
-    const steps: WizardStep[] = ['site-select', 'intensity', 'snap-density', 'peak-style', 'audio', 'complete'];
+    const steps: WizardStep[] = ['site-select', 'trial-abc', 'fine-tune', 'audio', 'complete'];
     const currentIndex = steps.indexOf(step);
     if (currentIndex > 0) {
       setStep(steps[currentIndex - 1]);
@@ -158,14 +229,70 @@ export default function DiscoveryWizardScreen() {
     </View>
   );
 
-  const renderIntensityStep = () => (
+  const renderTrialABC = () => (
     <View style={styles.stepContent}>
-      <ThemedText style={styles.stepTitle}>Haptic Intensity</ThemedText>
+      <ThemedText style={styles.stepTitle}>Try These Options</ThemedText>
       <ThemedText style={styles.stepDescription}>
-        Adjust how strong the vibrations feel for {selectedSite ? SESSION_SITE_LABELS[selectedSite] : 'this site'}
+        Tap each option to feel it, then select your favorite
+      </ThemedText>
+      
+      <View style={styles.trialsContainer}>
+        {TRIAL_PRESETS.map((preset) => (
+          <Card 
+            key={preset.id} 
+            style={[
+              styles.trialCard,
+              selectedTrial === preset.id && styles.trialCardSelected,
+            ]}
+          >
+            <Pressable
+              style={styles.trialContent}
+              onPress={() => handleTrialSelect(preset.id)}
+              testID={`button-trial-${preset.id}`}
+            >
+              <View style={styles.trialHeader}>
+                <View style={[
+                  styles.trialBadge,
+                  selectedTrial === preset.id && styles.trialBadgeSelected,
+                ]}>
+                  <ThemedText style={[
+                    styles.trialBadgeText,
+                    selectedTrial === preset.id && styles.trialBadgeTextSelected,
+                  ]}>
+                    {preset.id}
+                  </ThemedText>
+                </View>
+                <ThemedText style={styles.trialLabel}>{preset.label}</ThemedText>
+                {selectedTrial === preset.id && (
+                  <Feather name="check-circle" size={20} color={Colors.light.primary} />
+                )}
+              </View>
+              <ThemedText style={styles.trialDescription}>{preset.description}</ThemedText>
+              
+              <Pressable
+                style={({ pressed }) => [styles.tryButton, pressed && styles.tryButtonPressed]}
+                onPress={() => handleTrialTest(preset)}
+                testID={`button-try-${preset.id}`}
+              >
+                <Feather name="zap" size={16} color={Colors.light.primary} />
+                <ThemedText style={styles.tryButtonText}>Try</ThemedText>
+              </Pressable>
+            </Pressable>
+          </Card>
+        ))}
+      </View>
+    </View>
+  );
+
+  const renderFineTune = () => (
+    <View style={styles.stepContent}>
+      <ThemedText style={styles.stepTitle}>Fine-Tune</ThemedText>
+      <ThemedText style={styles.stepDescription}>
+        Adjust settings based on your selection
       </ThemedText>
       
       <Card style={styles.tuningCard}>
+        <ThemedText style={styles.tuningLabel}>Intensity</ThemedText>
         <View style={styles.sliderContainer}>
           <ThemedText style={styles.sliderLabel}>Gentle</ThemedText>
           <Slider
@@ -181,108 +308,69 @@ export default function DiscoveryWizardScreen() {
           />
           <ThemedText style={styles.sliderLabel}>Strong</ThemedText>
         </View>
-        
-        <Pressable
-          style={({ pressed }) => [styles.testButton, pressed && styles.testButtonPressed]}
-          onPress={handleTestHaptic}
-          testID="button-test-haptic"
-        >
-          <Feather name="zap" size={18} color={Colors.light.primary} />
-          <ThemedText style={styles.testButtonText}>Test Haptic</ThemedText>
-        </Pressable>
-      </Card>
-    </View>
-  );
 
-  const renderSnapDensityStep = () => (
-    <View style={styles.stepContent}>
-      <ThemedText style={styles.stepTitle}>Snap Density</ThemedText>
-      <ThemedText style={styles.stepDescription}>
-        Control how frequently haptic pulses occur
-      </ThemedText>
-      
-      <Card style={styles.tuningCard}>
-        <View style={styles.sliderContainer}>
-          <ThemedText style={styles.sliderLabel}>Sparse</ThemedText>
-          <Slider
-            style={styles.slider}
-            minimumValue={0.1}
-            maximumValue={1}
-            value={snapDensity}
-            onValueChange={setSnapDensity}
-            minimumTrackTintColor={Colors.light.accent}
-            maximumTrackTintColor={Colors.light.border}
-            thumbTintColor={Colors.light.accent}
-            testID="slider-wizard-snap"
-          />
-          <ThemedText style={styles.sliderLabel}>Dense</ThemedText>
-        </View>
-        
-        <Pressable
-          style={({ pressed }) => [styles.testButton, pressed && styles.testButtonPressed]}
-          onPress={handleTestHaptic}
-          testID="button-test-snap"
-        >
-          <Feather name="zap" size={18} color={Colors.light.primary} />
-          <ThemedText style={styles.testButtonText}>Test Haptic</ThemedText>
-        </Pressable>
-      </Card>
-    </View>
-  );
+        <View style={styles.divider} />
 
-  const renderPeakStyleStep = () => (
-    <View style={styles.stepContent}>
-      <ThemedText style={styles.stepTitle}>Peak Style</ThemedText>
-      <ThemedText style={styles.stepDescription}>
-        Choose how haptics behave during the peak phase
-      </ThemedText>
-      
-      <Card style={styles.tuningCard}>
-        <View style={styles.peakStyleOptions}>
+        <ThemedText style={styles.tuningLabel}>Peak Style</ThemedText>
+        <View style={styles.segmented}>
           <Pressable
             style={({ pressed }) => [
-              styles.peakOption,
-              peakStyle === 'max' && styles.peakOptionSelected,
-              pressed && styles.peakOptionPressed,
+              styles.segButton,
+              peakStyle === 'max' && styles.segButtonSelected,
+              pressed && styles.segButtonPressed,
             ]}
             onPress={() => setPeakStyle('max')}
             testID="button-peak-max"
           >
-            <Feather 
-              name="maximize-2" 
-              size={24} 
-              color={peakStyle === 'max' ? Colors.light.buttonText : Colors.light.text} 
-            />
-            <ThemedText style={[styles.peakOptionTitle, peakStyle === 'max' && styles.peakOptionTitleSelected]}>
+            <ThemedText style={[styles.segButtonText, peakStyle === 'max' && styles.segButtonTextSelected]}>
               Max
             </ThemedText>
-            <ThemedText style={[styles.peakOptionDesc, peakStyle === 'max' && styles.peakOptionDescSelected]}>
-              Sustained intensity at maximum during peak
-            </ThemedText>
           </Pressable>
-          
           <Pressable
             style={({ pressed }) => [
-              styles.peakOption,
-              peakStyle === 'snap' && styles.peakOptionSelected,
-              pressed && styles.peakOptionPressed,
+              styles.segButton,
+              peakStyle === 'snap' && styles.segButtonSelected,
+              pressed && styles.segButtonPressed,
             ]}
             onPress={() => setPeakStyle('snap')}
             testID="button-peak-snap"
           >
-            <Feather 
-              name="activity" 
-              size={24} 
-              color={peakStyle === 'snap' ? Colors.light.buttonText : Colors.light.text} 
-            />
-            <ThemedText style={[styles.peakOptionTitle, peakStyle === 'snap' && styles.peakOptionTitleSelected]}>
+            <ThemedText style={[styles.segButtonText, peakStyle === 'snap' && styles.segButtonTextSelected]}>
               Snap
-            </ThemedText>
-            <ThemedText style={[styles.peakOptionDesc, peakStyle === 'snap' && styles.peakOptionDescSelected]}>
-              Quick bursts with rest between
             </ThemedText>
           </Pressable>
         </View>
+
+        {peakStyle === 'snap' && (
+          <>
+            <View style={styles.divider} />
+            <ThemedText style={styles.tuningLabel}>Snap Frequency</ThemedText>
+            <View style={styles.sliderContainer}>
+              <ThemedText style={styles.sliderLabel}>2 Hz</ThemedText>
+              <Slider
+                style={styles.slider}
+                minimumValue={0}
+                maximumValue={1}
+                value={snapDensity}
+                onValueChange={setSnapDensity}
+                minimumTrackTintColor={Colors.light.accent}
+                maximumTrackTintColor={Colors.light.border}
+                thumbTintColor={Colors.light.accent}
+                testID="slider-wizard-snap"
+              />
+              <ThemedText style={styles.sliderLabel}>8 Hz</ThemedText>
+            </View>
+          </>
+        )}
+
+        <Pressable
+          style={({ pressed }) => [styles.testButton, pressed && styles.testButtonPressed]}
+          onPress={handleTestCurrent}
+          testID="button-test-current"
+        >
+          <Feather name="zap" size={18} color={Colors.light.primary} />
+          <ThemedText style={styles.testButtonText}>Test Current Settings</ThemedText>
+        </Pressable>
       </Card>
     </View>
   );
@@ -330,13 +418,15 @@ export default function DiscoveryWizardScreen() {
           <ThemedText style={styles.summaryValue}>{Math.round(hapticIntensity * 100)}%</ThemedText>
         </View>
         <View style={styles.summaryRow}>
-          <ThemedText style={styles.summaryLabel}>Snap Density</ThemedText>
-          <ThemedText style={styles.summaryValue}>{Math.round(snapDensity * 100)}%</ThemedText>
-        </View>
-        <View style={styles.summaryRow}>
           <ThemedText style={styles.summaryLabel}>Peak Style</ThemedText>
           <ThemedText style={styles.summaryValue}>{peakStyle === 'max' ? 'Max' : 'Snap'}</ThemedText>
         </View>
+        {peakStyle === 'snap' && (
+          <View style={styles.summaryRow}>
+            <ThemedText style={styles.summaryLabel}>Snap Frequency</ThemedText>
+            <ThemedText style={styles.summaryValue}>{Math.round(2 + snapDensity * 6)} Hz</ThemedText>
+          </View>
+        )}
         <View style={styles.summaryRow}>
           <ThemedText style={styles.summaryLabel}>Audio Volume</ThemedText>
           <ThemedText style={styles.summaryValue}>{Math.round(audioVolume * 100)}%</ThemedText>
@@ -348,17 +438,22 @@ export default function DiscoveryWizardScreen() {
   const renderStep = () => {
     switch (step) {
       case 'site-select': return renderSiteSelect();
-      case 'intensity': return renderIntensityStep();
-      case 'snap-density': return renderSnapDensityStep();
-      case 'peak-style': return renderPeakStyleStep();
+      case 'trial-abc': return renderTrialABC();
+      case 'fine-tune': return renderFineTune();
       case 'audio': return renderAudioStep();
       case 'complete': return renderComplete();
     }
   };
 
   const getStepNumber = () => {
-    const steps: WizardStep[] = ['site-select', 'intensity', 'snap-density', 'peak-style', 'audio', 'complete'];
+    const steps: WizardStep[] = ['site-select', 'trial-abc', 'fine-tune', 'audio', 'complete'];
     return steps.indexOf(step) + 1;
+  };
+
+  const canProceed = () => {
+    if (step === 'site-select') return !!selectedSite;
+    if (step === 'trial-abc') return !!selectedTrial;
+    return true;
   };
 
   return (
@@ -373,7 +468,7 @@ export default function DiscoveryWizardScreen() {
         </Pressable>
         
         <View style={styles.progress}>
-          {[1, 2, 3, 4, 5, 6].map((num) => (
+          {[1, 2, 3, 4, 5].map((num) => (
             <View 
               key={num} 
               style={[
@@ -408,6 +503,7 @@ export default function DiscoveryWizardScreen() {
                 <Button
                   title="Next"
                   onPress={handleNext}
+                  disabled={!canProceed()}
                   style={styles.footerButton}
                   testID="button-wizard-next"
                 />
@@ -425,6 +521,10 @@ export default function DiscoveryWizardScreen() {
       </View>
     </View>
   );
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 const styles = StyleSheet.create({
@@ -518,8 +618,78 @@ const styles = StyleSheet.create({
   siteButtonTextSelected: {
     color: Colors.light.buttonText,
   },
+  trialsContainer: {
+    gap: Spacing.md,
+  },
+  trialCard: {
+    borderWidth: 2,
+    borderColor: "transparent",
+  },
+  trialCardSelected: {
+    borderColor: Colors.light.primary,
+  },
+  trialContent: {
+    padding: Spacing.md,
+  },
+  trialHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    marginBottom: Spacing.xs,
+  },
+  trialBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.light.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  trialBadgeSelected: {
+    backgroundColor: Colors.light.primary,
+  },
+  trialBadgeText: {
+    ...Typography.button,
+    color: Colors.light.text,
+    fontSize: 14,
+  },
+  trialBadgeTextSelected: {
+    color: Colors.light.buttonText,
+  },
+  trialLabel: {
+    ...Typography.button,
+    color: Colors.light.text,
+    flex: 1,
+  },
+  trialDescription: {
+    ...Typography.caption,
+    color: Colors.light.textSecondary,
+    marginBottom: Spacing.sm,
+  },
+  tryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: Colors.light.primary + "15",
+    gap: Spacing.xs,
+  },
+  tryButtonPressed: {
+    opacity: 0.7,
+  },
+  tryButtonText: {
+    ...Typography.caption,
+    color: Colors.light.primary,
+    fontWeight: "600",
+  },
   tuningCard: {
     padding: Spacing.xl,
+  },
+  tuningLabel: {
+    ...Typography.button,
+    color: Colors.light.text,
+    marginBottom: Spacing.sm,
   },
   sliderContainer: {
     flexDirection: "row",
@@ -534,6 +704,37 @@ const styles = StyleSheet.create({
     color: Colors.light.textSecondary,
     width: 50,
     textAlign: "center",
+  },
+  divider: {
+    height: 1,
+    backgroundColor: Colors.light.border,
+    marginVertical: Spacing.lg,
+  },
+  segmented: {
+    flexDirection: "row",
+    backgroundColor: Colors.light.surface,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    overflow: "hidden",
+  },
+  segButton: {
+    flex: 1,
+    paddingVertical: Spacing.md,
+    alignItems: "center",
+  },
+  segButtonSelected: {
+    backgroundColor: Colors.light.primary,
+  },
+  segButtonPressed: {
+    opacity: 0.85,
+  },
+  segButtonText: {
+    ...Typography.button,
+    color: Colors.light.text,
+  },
+  segButtonTextSelected: {
+    color: Colors.light.buttonText,
   },
   testButton: {
     flexDirection: "row",
@@ -551,44 +752,6 @@ const styles = StyleSheet.create({
   testButtonText: {
     ...Typography.button,
     color: Colors.light.primary,
-  },
-  peakStyleOptions: {
-    flexDirection: "row",
-    gap: Spacing.md,
-  },
-  peakOption: {
-    flex: 1,
-    alignItems: "center",
-    padding: Spacing.lg,
-    borderRadius: BorderRadius.md,
-    backgroundColor: Colors.light.surface,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-  },
-  peakOptionSelected: {
-    backgroundColor: Colors.light.primary,
-    borderColor: Colors.light.primary,
-  },
-  peakOptionPressed: {
-    opacity: 0.7,
-  },
-  peakOptionTitle: {
-    ...Typography.button,
-    color: Colors.light.text,
-    marginTop: Spacing.sm,
-  },
-  peakOptionTitleSelected: {
-    color: Colors.light.buttonText,
-  },
-  peakOptionDesc: {
-    ...Typography.caption,
-    color: Colors.light.textSecondary,
-    textAlign: "center",
-    marginTop: Spacing.xs,
-  },
-  peakOptionDescSelected: {
-    color: Colors.light.buttonText,
-    opacity: 0.9,
   },
   completeIcon: {
     alignItems: "center",

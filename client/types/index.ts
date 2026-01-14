@@ -11,7 +11,7 @@ export type SessionSite =
   | 'abdomen-right'
   | 'other';
 
-export type SessionDuration = 24 | 30 | 42;
+export type SessionDuration = 18 | 24 | 30;
 
 export type PeakStyle = 'max' | 'snap';
 
@@ -22,9 +22,9 @@ export interface SessionPhases {
 }
 
 export const SESSION_PHASE_PRESETS: Record<SessionDuration, SessionPhases> = {
+  18: { settle: 9, peak: 5, cool: 4 },
   24: { settle: 12, peak: 6, cool: 6 },
-  30: { settle: 18, peak: 6, cool: 6 },
-  42: { settle: 18, peak: 12, cool: 12 },
+  30: { settle: 15, peak: 8, cool: 7 },
 };
 
 export interface SessionLog {
@@ -99,7 +99,7 @@ export const SESSION_SITE_LABELS: Record<SessionSite, string> = {
 };
 
 export const SESSION_DURATION_LABELS: Record<SessionDuration, string> = {
-  24: '24 sec (Quick)',
-  30: '30 sec (Standard)',
-  42: '42 sec (Extended)',
+  18: '18 sec (Quick)',
+  24: '24 sec (Standard)',
+  30: '30 sec (Extended)',
 };

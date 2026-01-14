@@ -201,27 +201,34 @@ export default function SettingsScreen() {
           </Pressable>
         </View>
 
-        <View style={styles.divider} />
+        {preferences.peakStyle === 'snap' && (
+          <>
+            <View style={styles.divider} />
 
-        <View style={styles.settingRow}>
-          <ThemedText style={styles.settingLabel}>Snap Density</ThemedText>
-        </View>
-        <View style={styles.sliderContainer}>
-          <ThemedText style={styles.sliderLabel}>Sparse</ThemedText>
-          <Slider
-            style={styles.slider}
-            minimumValue={0.1}
-            maximumValue={1}
-            value={snapDensity}
-            onValueChange={handleSnapDensityChange}
-            onSlidingComplete={handleSnapDensityComplete}
-            minimumTrackTintColor={Colors.light.accent}
-            maximumTrackTintColor={Colors.light.border}
-            thumbTintColor={Colors.light.accent}
-            testID="slider-snap-density"
-          />
-          <ThemedText style={styles.sliderLabel}>Dense</ThemedText>
-        </View>
+            <View style={styles.settingRow}>
+              <ThemedText style={styles.settingLabel}>Snap Density</ThemedText>
+              <ThemedText style={styles.settingDescription}>
+                Controls frequency during peak (2-8 Hz)
+              </ThemedText>
+            </View>
+            <View style={styles.sliderContainer}>
+              <ThemedText style={styles.sliderLabel}>Sparse</ThemedText>
+              <Slider
+                style={styles.slider}
+                minimumValue={0.1}
+                maximumValue={1}
+                value={snapDensity}
+                onValueChange={handleSnapDensityChange}
+                onSlidingComplete={handleSnapDensityComplete}
+                minimumTrackTintColor={Colors.light.accent}
+                maximumTrackTintColor={Colors.light.border}
+                thumbTintColor={Colors.light.accent}
+                testID="slider-snap-density"
+              />
+              <ThemedText style={styles.sliderLabel}>Dense</ThemedText>
+            </View>
+          </>
+        )}
       </Card>
 
       <ThemedText style={styles.sectionTitle}>Audio Preferences</ThemedText>
@@ -320,24 +327,28 @@ export default function SettingsScreen() {
         </ThemedText>
       </Card>
 
-      <ThemedText style={styles.sectionTitle}>Developer</ThemedText>
-      <Card style={styles.card}>
-        <View style={styles.settingRow}>
-          <View style={styles.settingInfo}>
-            <ThemedText style={styles.settingLabel}>Debug Mode</ThemedText>
-            <ThemedText style={styles.settingDescription}>
-              Show technical information during sessions
-            </ThemedText>
-          </View>
-          <Switch
-            value={preferences.debugMode}
-            onValueChange={handleDebugToggle}
-            trackColor={{ false: Colors.light.border, true: Colors.light.accent }}
-            thumbColor={Colors.light.surface}
-            testID="switch-debug"
-          />
-        </View>
-      </Card>
+      {preferences.debugMode && (
+        <>
+          <ThemedText style={styles.sectionTitle}>Developer</ThemedText>
+          <Card style={styles.card}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <ThemedText style={styles.settingLabel}>Debug Mode</ThemedText>
+                <ThemedText style={styles.settingDescription}>
+                  Show technical information during sessions
+                </ThemedText>
+              </View>
+              <Switch
+                value={preferences.debugMode}
+                onValueChange={handleDebugToggle}
+                trackColor={{ false: Colors.light.border, true: Colors.light.accent }}
+                thumbColor={Colors.light.surface}
+                testID="switch-debug"
+              />
+            </View>
+          </Card>
+        </>
+      )}
 
       <ThemedText style={styles.sectionTitle}>Information</ThemedText>
       <Card style={styles.card}>
@@ -391,7 +402,13 @@ export default function SettingsScreen() {
         </Pressable>
       </Card>
 
-      <ThemedText style={styles.version}>Alivio Ease v0.15</ThemedText>
+      <Pressable
+        onLongPress={handleDebugToggle.bind(null, !preferences.debugMode)}
+        delayLongPress={3000}
+        testID="version-text"
+      >
+        <ThemedText style={styles.version}>Alivio Ease v0.15</ThemedText>
+      </Pressable>
     </KeyboardAwareScrollViewCompat>
   );
 }

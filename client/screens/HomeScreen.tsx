@@ -26,7 +26,7 @@ const SITES: SessionSite[] = [
   'other'
 ];
 
-const DURATIONS: SessionDuration[] = [24, 30, 42];
+const DURATIONS: SessionDuration[] = [18, 24, 30];
 
 const SITE_ICONS: Record<SessionSite, string> = {
   'arm-left': 'circle',
@@ -198,7 +198,7 @@ export default function HomeScreen() {
                       selectedDuration === duration && styles.durationLabelSelected,
                     ]}
                   >
-                    {duration === 24 ? 'Quick' : duration === 30 ? 'Standard' : 'Extended'}
+                    {duration === 18 ? 'Quick' : duration === 24 ? 'Standard' : 'Extended'}
                   </ThemedText>
                 </Pressable>
               ))}
