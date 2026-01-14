@@ -3,8 +3,11 @@ import type { Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import * as fs from "fs";
 import * as path from "path";
+import { createProxyMiddleware } from "http-proxy-middleware";
 
 const app = express();
+const isDev = process.env.NODE_ENV === "development";
+const METRO_PORT = 8081;
 const log = console.log;
 
 declare module "http" {
@@ -108,7 +111,39 @@ function getAppName(): string {
   }
 }
 
-function serveExpoManifest(platform: string, res: Response) {
+async function serveExpoManifest(platform: string, req: Request, res: Response) {
+  // In development, proxy to Metro bundler
+  if (isDev) {
+    try {
+      const metroUrl = `http://localhost:${METRO_PORT}`;
+      const response = await fetch(metroUrl, {
+        headers: {
+          "expo-platform": platform,
+          "accept": "application/json",
+        },
+      });
+      
+      if (!response.ok) {
+        return res.status(response.status).json({ 
+          error: `Metro returned ${response.status}` 
+        });
+      }
+      
+      const manifest = await response.text();
+      res.setHeader("expo-protocol-version", "1");
+      res.setHeader("expo-sfv-version", "0");
+      res.setHeader("content-type", "application/json");
+      res.send(manifest);
+      return;
+    } catch (err) {
+      log("Error proxying to Metro:", err);
+      return res.status(503).json({ 
+        error: "Metro bundler not available. Please wait for it to start." 
+      });
+    }
+  }
+
+  // In production, serve static manifest
   const manifestPath = path.resolve(
     process.cwd(),
     "static-build",
@@ -172,6 +207,24 @@ function configureExpoAndLanding(app: express.Application) {
 
   log("Serving static Expo files with dynamic manifest routing");
 
+  // In development, proxy bundle requests to Metro
+  if (isDev) {
+    const metroProxy = createProxyMiddleware({
+      target: `http://localhost:${METRO_PORT}`,
+      changeOrigin: true,
+      ws: true,
+      logger: console,
+    });
+
+    // Proxy bundle and hot reload requests to Metro
+    app.use(/\.(bundle|map)(\?.*)?$/, metroProxy);
+    app.use("/symbolicate", metroProxy);
+    app.use("/__metro", metroProxy);
+    app.use("/logs", metroProxy);
+    app.use("/status", metroProxy);
+    log(`Proxying Metro requests to localhost:${METRO_PORT}`);
+  }
+
   app.use((req: Request, res: Response, next: NextFunction) => {
     if (req.path.startsWith("/api")) {
       return next();
@@ -183,7 +236,7 @@ function configureExpoAndLanding(app: express.Application) {
 
     const platform = req.header("expo-platform");
     if (platform && (platform === "ios" || platform === "android")) {
-      return serveExpoManifest(platform, res);
+      return serveExpoManifest(platform, req, res);
     }
 
     if (req.path === "/") {
