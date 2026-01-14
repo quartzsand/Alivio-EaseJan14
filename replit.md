@@ -6,10 +6,14 @@ Alivio Ease is a React Native/Expo wellness companion app designed to provide ca
 
 Key features include:
 - Customizable haptic vibration patterns (Standard, Gentle Wave, Soft Pulse)
+- Session site selection (7 body sites: arms, thighs, abdomen, other)
+- Configurable session durations (24s, 30s, 42s) with phase-based timing (settle/peak/cool)
 - Session timer with visual dragonfly animation for focus
 - Post-session comfort rating system (1-5 scale)
-- Session history tracking
-- User preferences for haptic intensity, audio, and display name
+- Session history tracking with site information
+- Per-site tuning via Discovery Wizard (intensity, snap density, peak style, audio volume)
+- User preferences for haptic intensity, audio volume, peak style (max/snap), snap density
+- Debug mode for session diagnostics
 - Age verification with parental consent flow for users under 18
 - Mandatory disclaimer acceptance during onboarding
 
@@ -64,9 +68,10 @@ client/
 ### Data Storage
 
 **Client-side**: AsyncStorage stores:
-- Session history (array of session logs with ratings)
-- User preferences (haptic intensity, audio, display name, avatar)
-- Onboarding state (disclaimer acceptance, age, parental consent)
+- Session history (array of session logs with ratings, site info)
+- User preferences (haptic intensity, audio volume, display name, avatar, peak style, snap density, debug mode, site tunings)
+- Site-specific tunings (per-site haptic/audio configurations)
+- Onboarding state (disclaimer acceptance, age, parental consent, discovery completed)
 
 **Server-side**: PostgreSQL database available but not yet used for core features. In-memory storage implemented as fallback.
 
