@@ -1,5 +1,5 @@
 modules = ["nodejs-20"]
-run = "npm run dev:mobile"
+run = "npm run dev"
 
 [nix]
 channel = "stable-24_05"
@@ -8,5 +8,5 @@ channel = "stable-24_05"
 run = ["sh", "-c", "npm run server:prod"]
 
 [[ports]]
-localPort = 8081
+localPort = 5000
 externalPort = 80
