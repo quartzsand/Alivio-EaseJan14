@@ -21,6 +21,29 @@ Key features include:
 
 Preferred communication style: Simple, everyday language.
 
+## Running the App
+
+### Web Development (Default Workflow)
+The default "Start application" workflow runs `npm run dev` which starts both:
+- Express backend on port 5000
+- Metro bundler on port 8081 (localhost mode for web)
+
+### Mobile Device Testing (Expo Go)
+For testing on physical iOS/Android devices via Expo Go, run Metro in tunnel mode:
+
+1. **Stop the default workflow** (to avoid port conflicts)
+2. **In the Shell, run:**
+   ```bash
+   npx expo start --tunnel --clear
+   ```
+3. **Wait for tunnel to connect** - you'll see a URL like `exp://xxxxx-anonymous-8081.exp.direct`
+4. **Open Expo Go on your device** and enter the tunnel URL manually, or scan the QR code
+
+**Important:** 
+- Do NOT use `EXPO_PACKAGER_PROXY_URL`, `REACT_NATIVE_PACKAGER_HOSTNAME`, or `EXPO_PUBLIC_DOMAIN` env vars for tunnel mode
+- Metro serves bundles directly via tunnel (not through the Express backend)
+- The backend is not required for mobile testing - it only provides the landing page and future API endpoints
+
 ## System Architecture
 
 ### Frontend Architecture
