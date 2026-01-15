@@ -430,22 +430,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-```
-
----
-
-## **📁 IMPLEMENTATION GUIDE**
-
-### **Step 1: File Placement in Replit**
-```
-your-replit-project/
-├── scripts/
-│   └── generate_sensory_profiles.py    # ✅ Place the fixed script here
-├── assets/
-│   └── audio/
-│       ├── sensory-tracks/             # ✅ Will be created by script
-│       └── test-profiles/              # ✅ Will be created by script
-└── src/
-    └── services/
-        └── SensoryAudioService.ts      # ✅ Needs modification (see below)
-

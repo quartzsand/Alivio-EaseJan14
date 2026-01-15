@@ -1,9 +1,9 @@
-modules = ["nodejs-22"]
+modules = ["nodejs-22", "python-3.11"]
 run = "npm run dev"
 
 [nix]
 channel = "stable-24_05"
-packages = ["cloudflared"]
+packages = ["cloudflared", "libxcrypt", "pkg-config", "xsimd"]
 
 [deployment]
 run = ["sh", "-c", "npm run server:prod"]
