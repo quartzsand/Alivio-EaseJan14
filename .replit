@@ -1,7 +1,7 @@
 modules = ["nodejs-20", "web", "postgresql-16"]
 
 # Default Run button command (used if workflows are not used)
-run = "npx expo start --tunnel --clear" # <-- Run Expo tunnel directly (no dev or server)
+run = "npx expo start --tunnel --clear" # <-- This will start the Expo Metro tunnel directly
 
 hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
 
@@ -9,14 +9,17 @@ hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
 channel = "stable-24_05"
 packages = ["unzip"]
 
+# Replit public web host is typically externalPort 80 -> localPort 5000
 [[ports]]
 localPort = 5000
 externalPort = 80
 
+# Metro is usually on 8081 (kept here; tunnel mode doesn't rely on this, but it's fine)
 [[ports]]
 localPort = 8081
 externalPort = 8081
 
+# Optional additional port mapping (kept from your file)
 [[ports]]
 localPort = 8082
 externalPort = 3000
@@ -51,4 +54,4 @@ author = "assistant"
 mode = "parallel"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "npm run server:dev" # <-- Keep this, but don't run it during mobile testing
+args = "npm run server:dev" # <-- Keep this but make sure it's NOT run during mobile testing
