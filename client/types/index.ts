@@ -59,6 +59,14 @@ export interface UserPreferences {
   lastSelectedSite?: SessionSite;
   siteTunings: Partial<Record<SessionSite, SiteTuning>>;
   discoveryCompleted: boolean;
+
+    useAdvancedHaptics?: boolean;  // default false
+    peakStyle?: "max" | "snap";
+    snapDensity01?: number;
+    hapticsIntensity01?: number;   // if you aren’t already using it
+    audioVolume01?: number;
+    debugEnabled?: boolean;        // if you already have it, keep one canonical field
+  }
 }
 
 export interface OnboardingState {
