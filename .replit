@@ -1,54 +1,12 @@
-modules = ["nodejs-20", "web", "postgresql-16"]
-
-# Default Run button command (used if workflows are not used)
-run = "npx expo start --tunnel --clear" # <-- This will start the Expo Metro tunnel directly
-
-hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
+modules = ["nodejs-20"]
+run = "npm run dev:mobile"
 
 [nix]
 channel = "stable-24_05"
-packages = ["unzip"]
 
-[[ports]]
-localPort = 5000
-externalPort = 80
+[deployment]
+run = ["sh", "-c", "npm run server:prod"]
 
 [[ports]]
 localPort = 8081
-externalPort = 8081
-
-[[ports]]
-localPort = 8082
-externalPort = 3000
-
-[env]
-PORT = "5000"
-
-[deployment]
-deploymentTarget = "autoscale"
-run = ["node", "./dist/index.cjs"]
-build = ["npm", "run", "build"]
-
-[workflows]
-# IMPORTANT: Make the Run button start the mobile tunnel flow
-runButton = "Mobile (Expo tunnel)"
-
-# ---- Mobile workflow (Expo Go testing) ----
-[[workflows.workflow]]
-name = "Mobile (Expo tunnel)"
-author = "assistant"
-mode = "parallel"
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "npx expo start --tunnel --clear" # <-- Start Expo tunnel manually here
-
-# ---- Project workflow (Web/backend + legacy dev) ----
-# Use this ONLY if you are working on the backend/landing page.
-# This runs the old concurrently-based dev script (server + expo:dev).
-[[workflows.workflow]]
-name = "Project (Web + Backend)"
-author = "assistant"
-mode = "parallel"
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "npm run server:dev" # <-- Keep this but make sure it's NOT run during mobile testing
+externalPort = 80
