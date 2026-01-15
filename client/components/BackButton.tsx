@@ -32,7 +32,7 @@ export function BackButton({ onPress }: BackButtonProps) {
       })}
       testID="back-button"
     >
-      <AntDesign name="arrowleft" size={24} color={Colors.light.text} />
+      <AntDesign name="left" size={24} color={Colors.light.text} />
     </Pressable>
   );
 }

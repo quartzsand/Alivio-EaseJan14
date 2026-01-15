@@ -1,7 +1,15 @@
 import { Audio } from "expo-av";
-import { AudioEngine, AudioCommand } from "./AudioEngine";
+import { AudioEngine } from "./AudioEngine";
+import { EngineCaps, AudioCommand } from "../types";
 
 export class ExpoAudioEngine implements AudioEngine {
+  public readonly caps: EngineCaps = {
+    continuousHaptics: false,
+    paramCurves: false,
+    audioMixing: true,
+    lowLatencyScheduling: false,
+  };
+
   private master = 0.6;
   private lofi: Audio.Sound | null = null;
 
@@ -10,7 +18,6 @@ export class ExpoAudioEngine implements AudioEngine {
       playsInSilentModeIOS: true,
       allowsRecordingIOS: false,
       staysActiveInBackground: false,
-      interruptionModeIOS: Audio.INTERRUPTION_MODE_IOS_MIX_WITH_OTHERS,
     });
   }
 
@@ -33,7 +40,7 @@ export class ExpoAudioEngine implements AudioEngine {
       if (cmd.action === "start") {
         if (!this.lofi) {
           const { sound } = await Audio.Sound.createAsync(
-            require("../../../assets/audio/lofi.mp3"),
+            { uri: 'https://freesound.org/data/previews/612/612095_5674468-lq.mp3' },
             { shouldPlay: true, isLooping: true, volume: this.master * cmd.gain01 }
           );
           this.lofi = sound;
@@ -50,5 +57,12 @@ export class ExpoAudioEngine implements AudioEngine {
 
   async stopAll() {
     if (this.lofi) await this.lofi.stopAsync();
+  }
+
+  async dispose() {
+    if (this.lofi) {
+      await this.lofi.unloadAsync();
+      this.lofi = null;
+    }
   }
 }

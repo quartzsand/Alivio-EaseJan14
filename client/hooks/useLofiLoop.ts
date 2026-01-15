@@ -1,9 +1,8 @@
-
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Audio } from "expo-av";
 import { Platform } from "react-native";
 
-import entrainLoop from "../../assets/audio/entrain_loop.mp3";
+const LOFI_LOOP_URL = 'https://freesound.org/data/previews/612/612095_5674468-lq.mp3';
 
 export function useLofiLoop(enabled: boolean, volume: number = 0.4) {
   const soundRef = useRef<Audio.Sound | null>(null);
@@ -18,7 +17,7 @@ export function useLofiLoop(enabled: boolean, volume: number = 0.4) {
     const load = async () => {
       try {
         const { sound } = await Audio.Sound.createAsync(
-          entrainLoop,
+          { uri: LOFI_LOOP_URL },
           { shouldPlay: false, isLooping: true, volume },
           (status) => {
             if (!mounted) return;
@@ -30,6 +29,7 @@ export function useLofiLoop(enabled: boolean, volume: number = 0.4) {
         soundRef.current = sound;
         setIsReady(true);
       } catch (e) {
+        console.log('Lofi loop load error:', e);
         setIsReady(false);
       }
     };

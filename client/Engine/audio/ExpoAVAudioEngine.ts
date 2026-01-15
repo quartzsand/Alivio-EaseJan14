@@ -19,7 +19,7 @@ export class ExpoAVAudioEngine implements AudioEngine {
       playsInSilentModeIOS: true,
       allowsRecordingIOS: false,
       staysActiveInBackground: false,
-      interruptionModeIOS: Audio.INTERRUPTION_MODE_IOS_MIX_WITH_OTHERS,
+      interruptionModeIOS: 1, // Mix with others
     });
   }
 

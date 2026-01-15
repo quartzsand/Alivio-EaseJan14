@@ -1,50 +1,70 @@
 import { useEffect, useCallback, useRef } from 'react';
-import { useAudioPlayer } from 'expo-audio';
+import { Audio } from 'expo-av';
 import { Platform } from 'react-native';
 
 const START_SOUND_URL = 'https://freesound.org/data/previews/320/320655_5260872-lq.mp3';
 const COMPLETE_SOUND_URL = 'https://freesound.org/data/previews/320/320654_5260872-lq.mp3';
 
 export function useSessionAudio(enabled: boolean) {
-  const startPlayer = useAudioPlayer(START_SOUND_URL);
-  const completePlayer = useAudioPlayer(COMPLETE_SOUND_URL);
-  const hasLoadedRef = useRef(false);
+  const startSoundRef = useRef<Audio.Sound | null>(null);
+  const completeSoundRef = useRef<Audio.Sound | null>(null);
 
   useEffect(() => {
     if (Platform.OS === 'web' || !enabled) return;
     
-    const loadPlayers = async () => {
+    const loadSounds = async () => {
       try {
-        hasLoadedRef.current = true;
+        const { sound: startSound } = await Audio.Sound.createAsync(
+          { uri: START_SOUND_URL },
+          { shouldPlay: false }
+        );
+        startSoundRef.current = startSound;
+
+        const { sound: completeSound } = await Audio.Sound.createAsync(
+          { uri: COMPLETE_SOUND_URL },
+          { shouldPlay: false }
+        );
+        completeSoundRef.current = completeSound;
       } catch (error) {
-        console.log('Audio players load error:', error);
+        console.log('Audio load error:', error);
       }
     };
     
-    loadPlayers();
-  }, [enabled, startPlayer, completePlayer]);
+    loadSounds();
+
+    return () => {
+      startSoundRef.current?.unloadAsync();
+      completeSoundRef.current?.unloadAsync();
+    };
+  }, [enabled]);
 
   const playStartSound = useCallback(async () => {
     if (Platform.OS === 'web' || !enabled) return;
     
     try {
-      startPlayer.seekTo(0);
-      startPlayer.play();
+      const sound = startSoundRef.current;
+      if (sound) {
+        await sound.setPositionAsync(0);
+        await sound.playAsync();
+      }
     } catch (error) {
       console.log('Start sound error:', error);
     }
-  }, [enabled, startPlayer]);
+  }, [enabled]);
 
   const playCompleteSound = useCallback(async () => {
     if (Platform.OS === 'web' || !enabled) return;
     
     try {
-      completePlayer.seekTo(0);
-      completePlayer.play();
+      const sound = completeSoundRef.current;
+      if (sound) {
+        await sound.setPositionAsync(0);
+        await sound.playAsync();
+      }
     } catch (error) {
       console.log('Complete sound error:', error);
     }
-  }, [enabled, completePlayer]);
+  }, [enabled]);
 
   return {
     playStartSound,
