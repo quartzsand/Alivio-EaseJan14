@@ -34,9 +34,6 @@
     },
     "extra": {
       "disclaimer": "This app is not a medical device. For wellness purposes only."
-    },
-    "plugins": [
-      "expo-web-browser"
-    ]
+    }
   }
 }
