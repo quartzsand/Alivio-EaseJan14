@@ -13,11 +13,14 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
+import * as Haptics from "expo-haptics";
 import { ThemedText } from "@/components/ThemedText";
 import { DragonflyFlight } from "@/components/DragonflyFlight";
 import { Colors, Spacing, BorderRadius, Typography } from "@/constants/theme";
 import { sensoryService } from "@/services/SensoryService";
-
+import { HapticsService } from "@/services/HapticsService";
+import { useSessionAudio } from "@/hooks/useSessionAudio";
+import { useLofiLoop } from "@/hooks/useLofiLoop";
 import { useApp } from "@/context/AppContext";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { HapticPattern, SessionSite, SessionDuration } from "@/types";
