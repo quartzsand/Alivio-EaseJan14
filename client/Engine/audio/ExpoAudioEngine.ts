@@ -36,7 +36,7 @@ export class ExpoAudioEngine implements AudioEngine {
   private async apply(cmd: AudioCommand) {
     if (cmd.type === "volume") return this.setMasterVolume(cmd.gain01);
 
-    if (cmd.type === "lofi") {
+    if (cmd.type === "track" && cmd.id === "lofi") {
       if (cmd.action === "start") {
         if (!this.lofi) {
           const { sound } = await Audio.Sound.createAsync(

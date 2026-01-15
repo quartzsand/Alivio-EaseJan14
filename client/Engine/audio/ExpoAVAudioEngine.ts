@@ -44,8 +44,7 @@ export class ExpoAVAudioEngine implements AudioEngine {
       if (cmd.action === "start") {
         if (!this.lofiSound) {
           const { sound } = await Audio.Sound.createAsync(
-            // TODO: replace with your asset path
-            require("../../assets/audio/lofi.mp3"),
+            { uri: 'https://freesound.org/data/previews/612/612095_5674468-lq.mp3' },
             {
               shouldPlay: true,
               isLooping: true,
