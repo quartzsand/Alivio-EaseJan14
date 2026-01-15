@@ -1,7 +1,7 @@
 modules = ["nodejs-20", "web", "postgresql-16"]
 
 # Default Run button command (used if workflows are not used)
-run = "npx expo start --tunnel --clear" # <-- Run the Expo tunnel directly
+run = "npx expo start --tunnel --clear" # <-- Ensure Expo tunnel starts directly
 
 hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
 
@@ -51,4 +51,4 @@ author = "assistant"
 mode = "parallel"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "npm run server:dev"
+args = "npm run server:dev" # <-- Keep this but it should not run during mobile testing
