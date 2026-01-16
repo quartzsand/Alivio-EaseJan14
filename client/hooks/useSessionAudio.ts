@@ -1,73 +1,78 @@
-import { useEffect, useCallback, useRef } from 'react';
-import { Audio } from 'expo-av';
-import { Platform } from 'react-native';
+// client/hooks/useSessionAudio.ts
+import { useEffect, useCallback, useRef } from "react";
+import { Audio } from "expo-av";
+import { Platform } from "react-native";
 
-const START_SOUND_URL = 'https://freesound.org/data/previews/320/320655_5260872-lq.mp3';
-const COMPLETE_SOUND_URL = 'https://freesound.org/data/previews/320/320654_5260872-lq.mp3';
+const START_SOUND = require("../../assets/audio/ui_start.mp3");
+const COMPLETE_SOUND = require("../../assets/audio/ui_complete.mp3");
 
 export function useSessionAudio(enabled: boolean) {
   const startSoundRef = useRef<Audio.Sound | null>(null);
   const completeSoundRef = useRef<Audio.Sound | null>(null);
 
   useEffect(() => {
-    if (Platform.OS === 'web' || !enabled) return;
-    
-    const loadSounds = async () => {
+    if (Platform.OS === "web" || !enabled) return;
+
+    let mounted = true;
+
+    const load = async () => {
       try {
         const { sound: startSound } = await Audio.Sound.createAsync(
-          { uri: START_SOUND_URL },
+          START_SOUND,
           { shouldPlay: false }
         );
-        startSoundRef.current = startSound;
-
         const { sound: completeSound } = await Audio.Sound.createAsync(
-          { uri: COMPLETE_SOUND_URL },
+          COMPLETE_SOUND,
           { shouldPlay: false }
         );
+
+        if (!mounted) {
+          await startSound.unloadAsync();
+          await completeSound.unloadAsync();
+          return;
+        }
+
+        startSoundRef.current = startSound;
         completeSoundRef.current = completeSound;
-      } catch (error) {
-        console.log('Audio load error:', error);
+      } catch (e) {
+        console.log("UI audio load error:", e);
       }
     };
-    
-    loadSounds();
+
+    void load();
 
     return () => {
-      startSoundRef.current?.unloadAsync();
-      completeSoundRef.current?.unloadAsync();
+      mounted = false;
+      void startSoundRef.current?.unloadAsync();
+      void completeSoundRef.current?.unloadAsync();
+      startSoundRef.current = null;
+      completeSoundRef.current = null;
     };
   }, [enabled]);
 
   const playStartSound = useCallback(async () => {
-    if (Platform.OS === 'web' || !enabled) return;
-    
+    if (Platform.OS === "web" || !enabled) return;
     try {
       const sound = startSoundRef.current;
-      if (sound) {
-        await sound.setPositionAsync(0);
-        await sound.playAsync();
-      }
-    } catch (error) {
-      console.log('Start sound error:', error);
+      if (!sound) return;
+      await sound.setPositionAsync(0);
+      await sound.playAsync();
+    } catch (e) {
+      console.log("Start sound error:", e);
     }
   }, [enabled]);
 
   const playCompleteSound = useCallback(async () => {
-    if (Platform.OS === 'web' || !enabled) return;
-    
+    if (Platform.OS === "web" || !enabled) return;
     try {
       const sound = completeSoundRef.current;
-      if (sound) {
-        await sound.setPositionAsync(0);
-        await sound.playAsync();
-      }
-    } catch (error) {
-      console.log('Complete sound error:', error);
+      if (!sound) return;
+      await sound.setPositionAsync(0);
+      await sound.playAsync();
+    } catch (e) {
+      console.log("Complete sound error:", e);
     }
   }, [enabled]);
 
-  return {
-    playStartSound,
-    playCompleteSound,
-  };
+  return { playStartSound, playCompleteSound };
 }

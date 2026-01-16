@@ -5,6 +5,7 @@ import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
+import { Switch, View } from "react-native";
 import Slider from "@react-native-community/slider";
 import * as Haptics from "expo-haptics";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
@@ -230,6 +231,80 @@ export default function SettingsScreen() {
           </>
         )}
       </Card>
+      {/* Advanced haptics feature flag (leave OFF by default) */}
+      <View style={styles.settingRow}>
+        <ThemedText style={styles.settingLabel}>Advanced Haptics (Dev Build)</ThemedText>
+        <Switch
+          value={!!preferences.useAdvancedHaptics}
+          onValueChange={(v) => updatePreferences({ useAdvancedHaptics: v })}
+        />
+      </View>
+
+      {/* Peak style */}
+      <View style={styles.settingRow}>
+        <ThemedText style={styles.settingLabel}>Peak Style</ThemedText>
+        <View style={{ flexDirection: "row", gap: 10 }}>
+          <Pressable
+            style={[
+              styles.pill,
+              preferences.peakStyle !== "snap" && styles.pillActive,
+            ]}
+            onPress={() => updatePreferences({ peakStyle: "max" })}
+          >
+            <ThemedText>Max</ThemedText>
+          </Pressable>
+
+          <Pressable
+            style={[
+              styles.pill,
+              preferences.peakStyle === "snap" && styles.pillActive,
+            ]}
+            onPress={() => updatePreferences({ peakStyle: "snap" })}
+          >
+            <ThemedText>Snap</ThemedText>
+          </Pressable>
+        </View>
+      </View>
+
+      {/* Snap density slider (only when Snap selected) */}
+      {preferences.peakStyle === "snap" && (
+        <View style={styles.settingBlock}>
+          <ThemedText style={styles.settingLabel}>
+            Snap Density
+          </ThemedText>
+          <Slider
+            value={preferences.snapDensity01 ?? 0.5}
+            minimumValue={0.15}
+            maximumValue={1.0}
+            step={0.01}
+            onValueChange={(v) => updatePreferences({ snapDensity01: v })}
+          />
+        </View>
+      )}
+
+      {/* Haptics intensity */}
+      <View style={styles.settingBlock}>
+        <ThemedText style={styles.settingLabel}>Haptics Intensity</ThemedText>
+        <Slider
+          value={preferences.hapticsIntensity01 ?? 0.85}
+          minimumValue={0.2}
+          maximumValue={1.0}
+          step={0.01}
+          onValueChange={(v) => updatePreferences({ hapticsIntensity01: v })}
+        />
+      </View>
+
+      {/* Audio volume */}
+      <View style={styles.settingBlock}>
+        <ThemedText style={styles.settingLabel}>Audio Volume</ThemedText>
+        <Slider
+          value={preferences.audioVolume01 ?? 0.6}
+          minimumValue={0.0}
+          maximumValue={1.0}
+          step={0.01}
+          onValueChange={(v) => updatePreferences({ audioVolume01: v })}
+        />
+      </View>
 
       <ThemedText style={styles.sectionTitle}>Audio Preferences</ThemedText>
       <Card style={styles.card}>

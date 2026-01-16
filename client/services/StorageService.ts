@@ -18,7 +18,7 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   displayName: "",
   hapticIntensity: 0.5,
   audioEnabled: true,
-  audioVolume: 0.7,
+  audioVolume: 0.6,
   avatarId: "blue",
   dragonflyVariant: "blue",
   theme: "light",
@@ -75,17 +75,16 @@ class StorageServiceClass {
     await this.saveSessions([]);
   }
 
-  async getPreferences(): Promise<UserPreferences> {
+  async getPreferences() {
     try {
-      const data = await AsyncStorage.getItem(STORAGE_KEYS.PREFERENCES);
-      return data
-        ? { ...DEFAULT_PREFERENCES, ...JSON.parse(data) }
-        : DEFAULT_PREFERENCES;
-    } catch (error) {
-      console.error("Error loading preferences:", error);
-      return DEFAULT_PREFERENCES;
+      const raw = await AsyncStorage.getItem("alivio:preferences:v1");
+      const stored = raw ? JSON.parse(raw) : null;
+      return { ...DEFAULT_PREFERENCES, ...(stored ?? {}) };
+    } catch {
+      return { ...DEFAULT_PREFERENCES };
     }
   }
+
 
   async savePreferences(preferences: Partial<UserPreferences>): Promise<void> {
     try {

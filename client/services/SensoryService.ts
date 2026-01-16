@@ -1,100 +1,111 @@
 // client/services/SensoryService.ts
-import { HapticsService } from "@/services/HapticsService";
 import { ExpoAVAudioEngine } from "@/services/audio/ExpoAVAudioEngine";
-import type { HapticPattern, SessionSite, SessionDuration } from "@/types";
+import {
+  ExpoHapticsEngine,
+  type SensorySettings,
+  type SessionPhase,
+} from "@/services/engines/ExpoHapticsEngine";
+import type { HapticPattern } from "@/types";
 
-type PeakStyle = "max" | "snap";
-
-export type SensorySessionConfig = {
+export type SensoryStartArgs = {
   pattern: HapticPattern;
-  site?: SessionSite;
-  duration?: SessionDuration;
+  phase: SessionPhase;
 
-  // user prefs
-  hapticsIntensity01: number; // overall scaler
-  peakStyle: PeakStyle; // "max" or "snap"
-  snapDensity01: number; // used if peakStyle="snap"
   audioEnabled: boolean;
+
+  hapticsIntensity01: number;
   audioVolume01: number;
+
+  peakStyle: "max" | "snap";
+  snapDensity01: number;
+
+  useAdvancedHaptics: boolean;
 };
 
 class SensoryService {
-  private audio = new ExpoAVAudioEngine();
   private initialized = false;
 
-  async init() {
-    if (this.initialized) return;
-    await this.audio.init();
+  private engines: {
+    audio: ExpoAVAudioEngine;
+    haptics: ExpoHapticsEngine | any;
+  } | null = null;
 
-    // If your HapticsService has an init, call it safely:
-    // (If it doesn't, no harm.)
-    const anyH = HapticsService as any;
-    if (typeof anyH.init === "function") {
-      await anyH.init();
+  private async initIfNeeded(settings: SensorySettings) {
+    if (this.initialized && this.engines) return;
+
+    const audio = new ExpoAVAudioEngine();
+
+    // Default engine
+    let haptics: any = new ExpoHapticsEngine();
+
+    // Future upgrade path (native): try -> fallback
+    if (settings.useAdvancedHaptics) {
+      try {
+        const mod = require("./engines/CoreHapticsEngine");
+        haptics = new mod.CoreHapticsEngine();
+      } catch {
+        haptics = new ExpoHapticsEngine();
+      }
     }
 
+    await audio.init();
+    await haptics.init();
+
+    haptics.setIntensity(settings.hapticsIntensity01);
+    await audio.setVolume(settings.audioVolume01);
+
+    this.engines = { audio, haptics };
     this.initialized = true;
   }
 
-  async startSession(cfg: SensorySessionConfig) {
-    await this.init();
+  async startSession(args: SensoryStartArgs) {
+    const settings: SensorySettings = {
+      useAdvancedHaptics: !!args.useAdvancedHaptics,
+      hapticsIntensity01: args.hapticsIntensity01,
+      audioVolume01: args.audioVolume01,
+      peakStyle: args.peakStyle,
+      snapDensity01: args.snapDensity01,
+    };
 
-    // AUDIO
-    this.audio.setEnabled(cfg.audioEnabled);
-    await this.audio.setVolume(cfg.audioVolume01);
-    if (cfg.audioEnabled) {
-      await this.audio.startLoop();
+    await this.initIfNeeded(settings);
+    if (!this.engines) return;
+
+    // AUDIO: exact methods from ExpoAVAudioEngine
+    this.engines.audio.setEnabled(!!args.audioEnabled);
+    await this.engines.audio.setVolume(args.audioVolume01);
+    if (args.audioEnabled) {
+      await this.engines.audio.startLoop();
+    } else {
+      await this.engines.audio.stopAll();
     }
 
     // HAPTICS
-    // Delegate to your existing implementation.
-    // You likely already have a "guided session" API; if not, we can map it.
-    const anyH = HapticsService as any;
-
-    // Preferred: a single call that runs the full 12/6/6 (or 18/24/30) session.
-    if (typeof anyH.playGuidedSession === "function") {
-      await anyH.playGuidedSession({
-        pattern: cfg.pattern,
-        site: cfg.site,
-        duration: cfg.duration,
-        intensity01: cfg.hapticsIntensity01,
-        peakStyle: cfg.peakStyle,
-        snapDensity01: cfg.snapDensity01,
-      });
-      return;
-    }
-
-    // Fallback: if your HapticsService only knows "startPattern"
-    if (typeof anyH.startPattern === "function") {
-      await anyH.startPattern(cfg.pattern, cfg.hapticsIntensity01);
-      return;
-    }
-
-    throw new Error(
-      "HapticsService is missing playGuidedSession() and startPattern(). Add one of these to proceed.",
-    );
+    this.engines.haptics.setIntensity(args.hapticsIntensity01);
+    await this.engines.haptics.start(args.pattern, args.phase, settings);
   }
 
-  async stop() {
-    // stop haptics
-    const anyH = HapticsService as any;
-    if (typeof anyH.stopAll === "function") await anyH.stopAll();
-    else if (typeof anyH.stop === "function") await anyH.stop();
-    else if (typeof anyH.cleanup === "function") await anyH.cleanup();
-
-    // stop audio
-    await this.audio.stopAll();
-  }
-
-  async dispose() {
-    const anyH = HapticsService as any;
-    if (typeof anyH.dispose === "function") await anyH.dispose();
-    await this.audio.dispose();
-    this.initialized = false;
+  updatePhase(phase: SessionPhase) {
+    if (!this.engines) return;
+    this.engines.haptics.updatePhase(phase);
   }
 
   async getMusicPositionMs() {
-    return this.audio.getPositionMs();
+    if (!this.engines) return 0;
+    return await this.engines.audio.getPositionMs();
+  }
+
+  async stop() {
+    if (!this.engines) return;
+    await this.engines.haptics.stopAll();
+    await this.engines.audio.stopAll();
+  }
+
+  async dispose() {
+    if (!this.engines) return;
+    await this.engines.haptics.dispose();
+    await this.engines.audio.dispose();
+    this.engines = null;
+    this.initialized = false;
   }
 }
 
