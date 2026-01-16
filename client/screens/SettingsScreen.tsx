@@ -1,11 +1,18 @@
 import React, { useState } from "react";
-import { View, StyleSheet, Pressable, Switch, Alert, Platform } from "react-native";
+import {
+  View,
+  StyleSheet,
+  Pressable,
+  Switch,
+  Alert,
+  Platform,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
-import { Switch, View } from "react-native";
+
 import Slider from "@react-native-community/slider";
 import * as Haptics from "expo-haptics";
 import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
@@ -23,9 +30,15 @@ export default function SettingsScreen() {
   const tabBarHeight = useBottomTabBarHeight();
   const navigation = useNavigation<NavigationProp>();
   const { preferences, updatePreferences, clearSessions, resetApp } = useApp();
-  const [hapticIntensity, setHapticIntensity] = useState(preferences.hapticIntensity);
-  const [audioVolume, setAudioVolume] = useState(preferences.audioVolume ?? 0.7);
-  const [snapDensity, setSnapDensity] = useState(preferences.snapDensity ?? 0.5);
+  const [hapticIntensity, setHapticIntensity] = useState(
+    preferences.hapticIntensity,
+  );
+  const [audioVolume, setAudioVolume] = useState(
+    preferences.audioVolume ?? 0.7,
+  );
+  const [snapDensity, setSnapDensity] = useState(
+    preferences.snapDensity ?? 0.5,
+  );
 
   const handleHapticSliderChange = async (value: number) => {
     setHapticIntensity(value);
@@ -94,11 +107,13 @@ export default function SettingsScreen() {
           onPress: async () => {
             await clearSessions();
             if (Platform.OS !== "web") {
-              await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              await Haptics.notificationAsync(
+                Haptics.NotificationFeedbackType.Success,
+              );
             }
           },
         },
-      ]
+      ],
     );
   };
 
@@ -124,11 +139,11 @@ export default function SettingsScreen() {
                     await resetApp();
                   },
                 },
-              ]
+              ],
             );
           },
         },
-      ]
+      ],
     );
   };
 
@@ -187,7 +202,14 @@ export default function SettingsScreen() {
             onPress={() => handlePeakStyleChange("max")}
             testID="button-peak-max"
           >
-            <ThemedText style={[styles.segButtonText, preferences.peakStyle === "max" && styles.segButtonTextSelected]}>Max</ThemedText>
+            <ThemedText
+              style={[
+                styles.segButtonText,
+                preferences.peakStyle === "max" && styles.segButtonTextSelected,
+              ]}
+            >
+              Max
+            </ThemedText>
           </Pressable>
           <Pressable
             style={({ pressed }) => [
@@ -198,11 +220,19 @@ export default function SettingsScreen() {
             onPress={() => handlePeakStyleChange("snap")}
             testID="button-peak-snap"
           >
-            <ThemedText style={[styles.segButtonText, preferences.peakStyle === "snap" && styles.segButtonTextSelected]}>Snap</ThemedText>
+            <ThemedText
+              style={[
+                styles.segButtonText,
+                preferences.peakStyle === "snap" &&
+                  styles.segButtonTextSelected,
+              ]}
+            >
+              Snap
+            </ThemedText>
           </Pressable>
         </View>
 
-        {preferences.peakStyle === 'snap' && (
+        {preferences.peakStyle === "snap" && (
           <>
             <View style={styles.divider} />
 
@@ -233,7 +263,9 @@ export default function SettingsScreen() {
       </Card>
       {/* Advanced haptics feature flag (leave OFF by default) */}
       <View style={styles.settingRow}>
-        <ThemedText style={styles.settingLabel}>Advanced Haptics (Dev Build)</ThemedText>
+        <ThemedText style={styles.settingLabel}>
+          Advanced Haptics (Dev Build)
+        </ThemedText>
         <Switch
           value={!!preferences.useAdvancedHaptics}
           onValueChange={(v) => updatePreferences({ useAdvancedHaptics: v })}
@@ -269,9 +301,7 @@ export default function SettingsScreen() {
       {/* Snap density slider (only when Snap selected) */}
       {preferences.peakStyle === "snap" && (
         <View style={styles.settingBlock}>
-          <ThemedText style={styles.settingLabel}>
-            Snap Density
-          </ThemedText>
+          <ThemedText style={styles.settingLabel}>Snap Density</ThemedText>
           <Slider
             value={preferences.snapDensity01 ?? 0.5}
             minimumValue={0.15}
@@ -318,7 +348,10 @@ export default function SettingsScreen() {
           <Switch
             value={preferences.audioEnabled}
             onValueChange={handleAudioToggle}
-            trackColor={{ false: Colors.light.border, true: Colors.light.accent }}
+            trackColor={{
+              false: Colors.light.border,
+              true: Colors.light.accent,
+            }}
             thumbColor={Colors.light.surface}
             testID="switch-audio"
           />
@@ -363,24 +396,42 @@ export default function SettingsScreen() {
             <Pressable
               style={({ pressed }) => [
                 styles.segButton,
-                preferences.dragonflyVariant === "blue" && styles.segButtonSelected,
+                preferences.dragonflyVariant === "blue" &&
+                  styles.segButtonSelected,
                 pressed && styles.segButtonPressed,
               ]}
               onPress={() => updatePreferences({ dragonflyVariant: "blue" })}
               testID="button-dragonfly-blue"
             >
-              <ThemedText style={[styles.segButtonText, preferences.dragonflyVariant === "blue" && styles.segButtonTextSelected]}>Blue</ThemedText>
+              <ThemedText
+                style={[
+                  styles.segButtonText,
+                  preferences.dragonflyVariant === "blue" &&
+                    styles.segButtonTextSelected,
+                ]}
+              >
+                Blue
+              </ThemedText>
             </Pressable>
             <Pressable
               style={({ pressed }) => [
                 styles.segButton,
-                preferences.dragonflyVariant === "white" && styles.segButtonSelected,
+                preferences.dragonflyVariant === "white" &&
+                  styles.segButtonSelected,
                 pressed && styles.segButtonPressed,
               ]}
               onPress={() => updatePreferences({ dragonflyVariant: "white" })}
               testID="button-dragonfly-white"
             >
-              <ThemedText style={[styles.segButtonText, preferences.dragonflyVariant === "white" && styles.segButtonTextSelected]}>White</ThemedText>
+              <ThemedText
+                style={[
+                  styles.segButtonText,
+                  preferences.dragonflyVariant === "white" &&
+                    styles.segButtonTextSelected,
+                ]}
+              >
+                White
+              </ThemedText>
             </Pressable>
           </View>
         </View>
@@ -389,13 +440,20 @@ export default function SettingsScreen() {
       <ThemedText style={styles.sectionTitle}>Tuning</ThemedText>
       <Card style={styles.card}>
         <Pressable
-          style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}
+          style={({ pressed }) => [
+            styles.menuItem,
+            pressed && styles.menuItemPressed,
+          ]}
           onPress={handleOpenDiscovery}
           testID="button-discovery-wizard"
         >
           <Feather name="sliders" size={20} color={Colors.light.primary} />
           <ThemedText style={styles.menuItemText}>Discovery Wizard</ThemedText>
-          <Feather name="chevron-right" size={20} color={Colors.light.textSecondary} />
+          <Feather
+            name="chevron-right"
+            size={20}
+            color={Colors.light.textSecondary}
+          />
         </Pressable>
         <ThemedText style={styles.menuItemDescription}>
           Fine-tune settings for each site
@@ -416,7 +474,10 @@ export default function SettingsScreen() {
               <Switch
                 value={preferences.debugMode}
                 onValueChange={handleDebugToggle}
-                trackColor={{ false: Colors.light.border, true: Colors.light.accent }}
+                trackColor={{
+                  false: Colors.light.border,
+                  true: Colors.light.accent,
+                }}
                 thumbColor={Colors.light.surface}
                 testID="switch-debug"
               />
@@ -428,32 +489,53 @@ export default function SettingsScreen() {
       <ThemedText style={styles.sectionTitle}>Information</ThemedText>
       <Card style={styles.card}>
         <Pressable
-          style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}
+          style={({ pressed }) => [
+            styles.menuItem,
+            pressed && styles.menuItemPressed,
+          ]}
           onPress={() => navigation.navigate("About")}
           testID="button-about"
         >
           <Feather name="info" size={20} color={Colors.light.textSecondary} />
           <ThemedText style={styles.menuItemText}>About Alivio Ease</ThemedText>
-          <Feather name="chevron-right" size={20} color={Colors.light.textSecondary} />
+          <Feather
+            name="chevron-right"
+            size={20}
+            color={Colors.light.textSecondary}
+          />
         </Pressable>
 
         <View style={styles.divider} />
 
         <Pressable
-          style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}
+          style={({ pressed }) => [
+            styles.menuItem,
+            pressed && styles.menuItemPressed,
+          ]}
           onPress={() => navigation.navigate("DisclaimerModal")}
           testID="button-disclaimer"
         >
-          <Feather name="file-text" size={20} color={Colors.light.textSecondary} />
+          <Feather
+            name="file-text"
+            size={20}
+            color={Colors.light.textSecondary}
+          />
           <ThemedText style={styles.menuItemText}>View Disclaimer</ThemedText>
-          <Feather name="chevron-right" size={20} color={Colors.light.textSecondary} />
+          <Feather
+            name="chevron-right"
+            size={20}
+            color={Colors.light.textSecondary}
+          />
         </Pressable>
       </Card>
 
       <ThemedText style={styles.sectionTitle}>Account</ThemedText>
       <Card style={styles.card}>
         <Pressable
-          style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}
+          style={({ pressed }) => [
+            styles.menuItem,
+            pressed && styles.menuItemPressed,
+          ]}
           onPress={handleClearHistory}
           testID="button-clear-history"
         >
@@ -466,7 +548,10 @@ export default function SettingsScreen() {
         <View style={styles.divider} />
 
         <Pressable
-          style={({ pressed }) => [styles.menuItem, pressed && styles.menuItemPressed]}
+          style={({ pressed }) => [
+            styles.menuItem,
+            pressed && styles.menuItemPressed,
+          ]}
           onPress={handleResetApp}
           testID="button-reset-app"
         >
