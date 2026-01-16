@@ -1,8 +1,9 @@
 {
   "expo": {
-    "name": "Alivio Ease",
+    "name": "Alivio's Easel",
     "slug": "alivio-ease",
     "version": "1.0.0",
+    "platforms": ["ios", "android", "web"], //
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -11,26 +12,18 @@
       "resizeMode": "contain",
       "backgroundColor": "#005EB8"
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.alivio.ease",
       "infoPlist": {
-        "UIBackgroundModes": [
-          "audio"
-        ],
+        "UIBackgroundModes": ["audio"],
         "NSUserTrackingUsageDescription": "We do not track you. This permission is not used."
       }
     },
     "android": {
       "package": "com.alivio.ease",
-      "permissions": [
-        "VIBRATE",
-        "WAKE_LOCK",
-        "POST_NOTIFICATIONS"
-      ]
+      "permissions": ["VIBRATE", "WAKE_LOCK", "POST_NOTIFICATIONS"]
     },
     "extra": {
       "disclaimer": "This app is not a medical device. For wellness purposes only."

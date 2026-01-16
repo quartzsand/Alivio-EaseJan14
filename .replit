@@ -3,7 +3,7 @@ run = "npm run dev"
 
 [nix]
 channel = "stable-24_05"
-packages = ["cloudflared", "libxcrypt", "pkg-config", "xsimd", "ffmpeg"]
+packages = ["cloudflared", "ffmpeg", "libxcrypt", "pkg-config", "xsimd"]
 
 [deployment]
 run = ["sh", "-c", "npm run server:prod"]
