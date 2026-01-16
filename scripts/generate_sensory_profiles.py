@@ -77,25 +77,26 @@ TEXTURE_VARIATIONS = {
     }
 }
 
-# Test profiles (separate)
+# Test profiles (separate) - Enhanced with iPhone optimization
 TEST_PROFILES = {
-    "test-gate-control": {
+    "test_gate_control": {
         "display_name": "Test A: Sharp Pain Relief",
         "description": "Scientific baseline for sharp sensation masking (Gate Control Theory)",
-        "physics": "steady_tone",
-        "carrier_freq": 180,  # ✅ Fixed: iPhone optimal
-        "chassis_freq": 170,
+        "physics": "gate_control",
+        "primary_freq": 180,  # iPhone speaker sweet spot
+        "chassis_freq": 170,  # iPhone LRA resonance
         "duration": 18
     },
-    "test-massage-sim": {
+    "test_massage_simulation": {
         "display_name": "Test B: Deep Comfort", 
-        "description": "Mimics therapeutic massage for general aches",
-        "physics": "enhanced_pulses",
-        "carrier_freq": 120,  # ✅ Fixed: Lowest meaningful iPhone freq
-        "pulse_rate": 100,    # BPM
+        "description": "Enhanced massage gun simulation for general aches",
+        "physics": "massage_sim",
+        "primary_freq": 120,  # Lowest meaningful iPhone frequency
+        "pulse_bpm": 100,     # Massage rhythm
+        "harmonic_freq": 240, # Harmonic for perceived low frequency
         "chassis_freq": 150,
         "duration": 30,
-        "entrainment_ramp": 10  # ✅ Added: 10s ramp
+        "entrainment_ramp": 10  # 10s sympathetic down-regulation ramp
     }
 }
 
@@ -313,8 +314,20 @@ def generate_wellness_track(profile_name: str, texture: str, duration: float) ->
 
     return final_audio
 
+def apply_comfort_envelope(audio: np.ndarray, duration: float) -> np.ndarray:
+    """Apply gentle comfort envelope for smooth start/end"""
+    envelope = generate_safety_envelope(duration, ramp_up=2.0, ramp_down=2.0)
+    # Ensure envelope matches audio length
+    if len(envelope) != len(audio):
+        envelope = np.interp(
+            np.linspace(0, 1, len(audio)),
+            np.linspace(0, 1, len(envelope)),
+            envelope
+        )
+    return audio * envelope
+
 def generate_test_track(test_profile_id: str) -> np.ndarray:
-    """Generate test validation profile"""
+    """Generate validation test audio with precise iPhone optimization"""
 
     profile = TEST_PROFILES[test_profile_id]
     duration = profile["duration"]
@@ -323,46 +336,55 @@ def generate_test_track(test_profile_id: str) -> np.ndarray:
 
     t = np.linspace(0, duration, int(SAMPLE_RATE * duration))
 
-    if profile["physics"] == "steady_tone":
-        # Test A: Pure Gate Control Theory
-        carrier_freq = profile["carrier_freq"]
-        wave = np.sin(2 * np.pi * carrier_freq * t)
+    if profile["physics"] == "gate_control":
+        # Test A: Pure Gate Control Theory Implementation
+        # Continuous 180Hz sine wave (iPhone speaker sweet spot)
+        primary_freq = profile["primary_freq"]
+        gate_control_wave = np.sin(2 * np.pi * primary_freq * t)
+        
+        # Add minimal chassis coupling for iPhone LRA resonance
+        chassis_freq = profile["chassis_freq"]
+        chassis_component = 0.3 * np.sin(2 * np.pi * chassis_freq * t)
+        
+        test_audio = 0.7 * gate_control_wave + 0.3 * chassis_component
 
-    elif profile["physics"] == "enhanced_pulses":
-        # Test B: Massage gun simulation
-        carrier_freq = profile["carrier_freq"]
-        pulse_bpm = profile["pulse_rate"]
+    elif profile["physics"] == "massage_sim":
+        # Test B: Enhanced Massage Gun Simulation
+        primary_freq = profile["primary_freq"]  # Lowest meaningful iPhone frequency
+        
+        # Enhanced saw^8 pulses for distinct mechanical feeling
+        saw_wave = signal.sawtooth(2 * np.pi * primary_freq * t)
+        enhanced_pulses = np.sign(saw_wave) * (np.abs(saw_wave) ** 8)
+        
+        # 100 BPM gating (massage rhythm)
+        pulse_freq = profile["pulse_bpm"] / 60  # Convert BPM to Hz
+        gate = (signal.square(2 * np.pi * pulse_freq * t, duty=0.6) + 1) / 2
+        
+        gated_pulses = enhanced_pulses * gate
+        
+        # Harmonic simulation for perceived low frequency
+        harmonic_freq = profile["harmonic_freq"]
+        harmonic_component = 0.4 * np.sin(2 * np.pi * harmonic_freq * t)
+        
+        # Entrainment ramp (sympathetic down-regulation)
+        ramp_duration = profile.get("entrainment_ramp", 10)
+        ramp_samples = int(ramp_duration * SAMPLE_RATE) if duration >= 30 else int(3 * SAMPLE_RATE)
+        ramp = np.ones_like(t)
+        ramp[:ramp_samples] = np.linspace(0.2, 1.0, ramp_samples)
+        
+        test_audio = (0.6 * gated_pulses + 0.4 * harmonic_component) * ramp
+    
+    else:
+        # Fallback: simple sine wave
+        test_audio = np.sin(2 * np.pi * 180 * t)
 
-        # Enhanced saw^8 pulses
-        carrier = np.sin(2 * np.pi * carrier_freq * t)
-        pulse_freq = pulse_bpm / 60
-        saw_wave = signal.sawtooth(2 * np.pi * pulse_freq * t, width=1.0)
-        enhanced_envelope = ((saw_wave + 1) / 2) ** 8
+    # Apply gentle comfort envelope
+    final_test_audio = apply_comfort_envelope(test_audio, duration)
 
-        wave = carrier * enhanced_envelope
+    # Normalize for iPhone output
+    final_test_audio = final_test_audio / np.max(np.abs(final_test_audio)) * 0.85
 
-        # Entrainment ramp for sympathetic down-regulation
-        if "entrainment_ramp" in profile:
-            ramp_duration = profile["entrainment_ramp"]
-            ramp_samples = int(ramp_duration * SAMPLE_RATE)
-            if ramp_samples < len(wave):
-                ramp = np.linspace(0.2, 1.0, ramp_samples)
-                wave[:ramp_samples] *= ramp
-
-    # Add chassis coupling
-    chassis_freq = profile["chassis_freq"]
-    chassis_component = 0.3 * np.sin(2 * np.pi * chassis_freq * t)
-
-    mixed_test = 0.7 * wave + 0.3 * chassis_component
-
-    # Apply safety envelope
-    safety_envelope = generate_safety_envelope(duration)
-    final_test = mixed_test * safety_envelope
-
-    # Normalize
-    final_test = final_test / np.max(np.abs(final_test)) * 0.85
-
-    return final_test
+    return final_test_audio
 
 # =============================================================================
 # MAIN EXECUTION
