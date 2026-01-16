@@ -1,79 +1,75 @@
 // client/services/engines/ExpoHapticsEngine.ts
 import * as Haptics from "expo-haptics";
+import type { HapticPattern } from "@/types";
 
 export type PeakStyle = "max" | "snap";
-export type SessionPhase = "idle" | "settle" | "peak" | "coolDown" | "complete";
 
 export type SensorySettings = {
-  useAdvancedHaptics: boolean; // not used here, but kept for shared shape
-  hapticsIntensity01: number; // 0..1
-  audioVolume01: number; // not used here, but kept for shared shape
-  peakStyle: PeakStyle; // max | snap
-  snapDensity01: number; // 0..1 (used only when peakStyle="snap")
+  useAdvancedHaptics: boolean; // ignored by Expo engine, used by future native engine
+  hapticsIntensity01: number;
+  peakStyle: PeakStyle;
+  snapDensity01: number;
+  audioVolume01: number; // not used here, but convenient to keep in one settings object
 };
 
-type TimeoutHandle = ReturnType<typeof setTimeout>;
+type Phase = "settle" | "peak" | "coolDown";
 
-function clamp01(x: number) {
-  return Math.max(0, Math.min(1, x));
-}
-
-function sleep(ms: number) {
-  return new Promise<void>((resolve) => setTimeout(resolve, ms));
-}
+const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
 export class ExpoHapticsEngine {
-  private intensity01 = 0.85;
-
   private running = false;
   private runId = 0;
 
-  private phase: SessionPhase = "idle";
-  private settings: SensorySettings | null = null;
-  private patternId = "default";
+  private pattern: HapticPattern = "standard";
+  private phase: Phase = "settle";
+  private settings: SensorySettings = {
+    useAdvancedHaptics: false,
+    hapticsIntensity01: 0.85,
+    peakStyle: "max",
+    snapDensity01: 0.5,
+    audioVolume01: 0.6,
+  };
 
-  private bedTimer: TimeoutHandle | null = null;
-  private burstTimer: TimeoutHandle | null = null;
+  private bedTimeout: ReturnType<typeof setTimeout> | null = null;
+  private envTimeout: ReturnType<typeof setTimeout> | null = null;
 
   async init() {
-    // expo-haptics requires no explicit init
+    // Expo Haptics has no explicit init requirement, but keep for parity with future engines.
+    return;
   }
 
   setIntensity(level01: number) {
-    this.intensity01 = clamp01(level01);
+    this.settings.hapticsIntensity01 = clamp01(level01);
   }
 
-  /**
-   * REQUIRED SIGNATURE for your codebase:
-   * start(pattern, phase, settings)
-   */
-  async start(pattern: any, phase: SessionPhase, settings: SensorySettings) {
-    await this.stopAll();
-
-    this.patternId = this.normalizePatternId(pattern);
+  async start(pattern: HapticPattern, phase: Phase, settings: SensorySettings) {
+    this.pattern = pattern;
     this.phase = phase;
-    this.settings = settings;
-    this.setIntensity(settings.hapticsIntensity01);
-
+    this.settings = { ...this.settings, ...settings };
     this.running = true;
-    this.runId++;
 
-    this.startLoops(this.runId);
+    // hard restart loops so phase changes feel immediate
+    this.runId++;
+    const myRun = this.runId;
+
+    this.clearTimers();
+    void this.loopBed(myRun);
+    void this.loopEnvelope(myRun);
   }
 
-  /**
-   * REQUIRED SIGNATURE for your codebase:
-   * updatePhase(phase)
-   */
-  updatePhase(phase: SessionPhase) {
-    if (!this.running) return;
+  updatePhase(phase: Phase) {
     if (this.phase === phase) return;
-
     this.phase = phase;
 
-    // Re-schedule with new phase timings
+    if (!this.running) return;
+
+    // restart loops to re-shape immediately for new phase
+    this.runId++;
+    const myRun = this.runId;
     this.clearTimers();
-    this.startLoops(this.runId);
+    void this.loopBed(myRun);
+    void this.loopEnvelope(myRun);
   }
 
   async stopAll() {
@@ -86,206 +82,413 @@ export class ExpoHapticsEngine {
     await this.stopAll();
   }
 
-  // ------------------------
-  // Scheduling
-  // ------------------------
+  // ---------- Scheduling ----------
 
   private clearTimers() {
-    if (this.bedTimer) clearTimeout(this.bedTimer);
-    if (this.burstTimer) clearTimeout(this.burstTimer);
-    this.bedTimer = null;
-    this.burstTimer = null;
+    if (this.bedTimeout) clearTimeout(this.bedTimeout);
+    if (this.envTimeout) clearTimeout(this.envTimeout);
+    this.bedTimeout = null;
+    this.envTimeout = null;
   }
 
-  private startLoops(myRunId: number) {
-    this.scheduleBed(myRunId);
-    this.scheduleBurst(myRunId);
-  }
-
-  private scheduleBed(myRunId: number) {
-    if (!this.running || myRunId !== this.runId) return;
-
-    const interval = this.getBedIntervalMs();
-    const jitter = interval * (0.88 + Math.random() * 0.24);
-
-    this.bedTimer = setTimeout(async () => {
-      if (!this.running || myRunId !== this.runId) return;
-      await this.fireBedTick();
-      this.scheduleBed(myRunId);
-    }, jitter);
-  }
-
-  private scheduleBurst(myRunId: number) {
-    if (!this.running || myRunId !== this.runId) return;
-
-    const interval = this.getBurstEveryMs();
-    const jitter = interval * (0.85 + Math.random() * 0.3);
-
-    this.burstTimer = setTimeout(async () => {
-      if (!this.running || myRunId !== this.runId) return;
-      await this.fireBurst();
-      this.scheduleBurst(myRunId);
-    }, jitter);
-  }
-
-  // ------------------------
-  // Phase timing model
-  // ------------------------
-
-  private isCrispPattern() {
-    return /digital|finger|edge|crisp/i.test(this.patternId);
-  }
-
-  private isDeepPattern() {
-    return /deep|thigh|abdomen|buffer/i.test(this.patternId);
-  }
-
-  private getBedIntervalMs() {
-    // "Bed" is the frequent occupancy tick that reads as buzzing.
-    // Stronger feel = denser bed.
-    const lvl = this.intensity01;
-
-    // Base per phase
-    let ms =
-      this.phase === "peak"
-        ? 95
-        : this.phase === "settle"
-          ? 130
-          : this.phase === "coolDown"
-            ? 170
-            : 180;
-
-    // Pattern shaping
-    if (this.isCrispPattern()) ms -= 12;
-    if (this.isDeepPattern()) ms += 10;
-
-    // Intensity slider increases density
-    ms -= Math.round(lvl * 18);
-
-    // PeakStyle "max" pushes density a bit further
-    if (this.phase === "peak" && this.settings?.peakStyle === "max") {
-      ms -= 10;
+  private baseBedIntervalMs(): number {
+    // Baseline density by pattern
+    switch (this.pattern) {
+      case "gentle-wave":
+        return 210;
+      case "soft-pulse":
+        return 185;
+      case "standard":
+      default:
+        return 165;
     }
-
-    // Clamp to avoid extreme CPU load / iOS throttling
-    return Math.max(70, Math.min(220, ms));
   }
 
-  private getBurstEveryMs() {
-    // Bursts are the "swingy" salience events. Peak should feel urgent/alive.
-    const lvl = this.intensity01;
-    const peakStyle = this.settings?.peakStyle ?? "max";
-    const snap01 = clamp01(this.settings?.snapDensity01 ?? 0.5);
+  private phaseBedMultiplier(): number {
+    if (this.phase === "peak") return 0.78;
+    if (this.phase === "coolDown") return 1.15;
+    return 1.0; // settle
+  }
 
-    if (this.phase === "peak") {
-      if (peakStyle === "snap") {
-        // Snap = controllable burst frequency.
-        // Map snap01 to approx 1.5 .. 6.0 snaps/sec => 666ms .. 166ms
-        const snapsPerSec = 1.5 + 4.5 * snap01;
-        const ms = 1000 / snapsPerSec;
-        return Math.max(150, Math.min(700, ms));
-      }
+  private intensityBedMultiplier(): number {
+    // higher intensity -> slightly denser
+    const i = clamp01(this.settings.hapticsIntensity01);
+    return lerp(1.22, 0.82, i);
+  }
 
-      // Max = heavy/rigid bursts, very frequent
-      const ms = 260 - Math.round(lvl * 80);
-      return Math.max(140, Math.min(320, ms));
+  private bedIntervalMs(): number {
+    const ms =
+      this.baseBedIntervalMs() *
+      this.phaseBedMultiplier() *
+      this.intensityBedMultiplier();
+
+    // prevent pathological rates
+    return Math.max(85, Math.min(320, Math.round(ms)));
+  }
+
+  private burstGroupPauseMs(): number {
+    // How often we create a burst group
+    // settle: slower, peak: faster, cool: slower
+    const snap = clamp01(this.settings.snapDensity01);
+
+    if (this.phase === "peak") return Math.round(lerp(420, 160, snap));
+    if (this.phase === "coolDown") return Math.round(lerp(650, 380, snap));
+    return Math.round(lerp(560, 280, snap)); // settle
+  }
+
+  private burstSnapsCount(): number {
+    // snapDensity controls “how many snaps occur” during peak when peakStyle="snap"
+    const snap = clamp01(this.settings.snapDensity01);
+    return Math.round(lerp(2, 7, snap));
+  }
+
+  private chooseBedStyle(): Haptics.ImpactFeedbackStyle | "selection" {
+    const i = clamp01(this.settings.hapticsIntensity01);
+
+    if (this.phase === "coolDown") {
+      if (i < 0.35) return "selection";
+      return Haptics.ImpactFeedbackStyle.Soft;
     }
 
     if (this.phase === "settle") {
-      const ms = 520 - Math.round(lvl * 120);
-      return Math.max(260, Math.min(650, ms));
+      if (i < 0.3) return "selection";
+      if (i < 0.65) return Haptics.ImpactFeedbackStyle.Light;
+      return Haptics.ImpactFeedbackStyle.Medium;
     }
 
-    // coolDown
-    const ms = 780 - Math.round(lvl * 120);
-    return Math.max(420, Math.min(900, ms));
+    // peak
+    if (this.settings.peakStyle === "max") {
+      // your requirement: “Max” always mean 100% Heavy impacts + highest density
+      return Haptics.ImpactFeedbackStyle.Heavy;
+    }
+
+    // snap peak: still strong, but feels “snappier”
+    return i > 0.7
+      ? Haptics.ImpactFeedbackStyle.Rigid
+      : Haptics.ImpactFeedbackStyle.Heavy;
   }
 
-  // ------------------------
-  // Haptic primitives
-  // ------------------------
+  private chooseBurstStyle(): Haptics.ImpactFeedbackStyle {
+    const i = clamp01(this.settings.hapticsIntensity01);
 
-  private async fireBedTick() {
-    // Bed tick should be fast and "present" but not always heavy.
-    const lvl = this.intensity01;
-
-    // In low intensity, use selection pulses to stay comfortable.
-    if (lvl < 0.3) {
-      await Haptics.selectionAsync();
-      return;
+    if (this.phase === "coolDown") {
+      return i > 0.6
+        ? Haptics.ImpactFeedbackStyle.Medium
+        : Haptics.ImpactFeedbackStyle.Soft;
     }
 
-    // Decide style by phase + pattern
-    const crisp = this.isCrispPattern();
-
-    let style: Haptics.ImpactFeedbackStyle =
-      this.phase === "peak"
-        ? crisp
-          ? Haptics.ImpactFeedbackStyle.Rigid
-          : Haptics.ImpactFeedbackStyle.Heavy
-        : this.phase === "settle"
-          ? crisp
-            ? Haptics.ImpactFeedbackStyle.Medium
-            : Haptics.ImpactFeedbackStyle.Soft
-          : Haptics.ImpactFeedbackStyle.Soft;
-
-    // Scale down if intensity isn't high
-    if (lvl < 0.55 && style === Haptics.ImpactFeedbackStyle.Heavy) {
-      style = Haptics.ImpactFeedbackStyle.Medium;
+    if (this.phase === "settle") {
+      return i > 0.7
+        ? Haptics.ImpactFeedbackStyle.Medium
+        : Haptics.ImpactFeedbackStyle.Light;
     }
 
-    await Haptics.impactAsync(style);
+    // peak
+    if (this.settings.peakStyle === "max")
+      return Haptics.ImpactFeedbackStyle.Heavy;
+    return i > 0.7
+      ? Haptics.ImpactFeedbackStyle.Rigid
+      : Haptics.ImpactFeedbackStyle.Heavy;
   }
 
-  private async fireBurst() {
-    // Bursts: 2–4 impacts in a tight cluster (reads as "alive" and distracting).
-    const lvl = this.intensity01;
-    const crisp = this.isCrispPattern();
+  private async loopBed(myRun: number) {
+    if (!this.running || myRun !== this.runId) return;
 
-    // How many hits in a burst
-    let hits = this.phase === "peak" ? 3 : this.phase === "settle" ? 2 : 2;
-
-    // In "max" peak, slightly more salience
-    if (
-      this.phase === "peak" &&
-      (this.settings?.peakStyle ?? "max") === "max" &&
-      lvl > 0.7
-    ) {
-      hits = 4;
+    try {
+      const bedStyle = this.chooseBedStyle();
+      if (bedStyle === "selection") await Haptics.selectionAsync();
+      else await Haptics.impactAsync(bedStyle);
+    } catch {
+      // ignore
     }
 
-    // Style selection
-    let style: Haptics.ImpactFeedbackStyle =
-      this.phase === "peak"
-        ? crisp
-          ? Haptics.ImpactFeedbackStyle.Rigid
-          : Haptics.ImpactFeedbackStyle.Heavy
-        : this.phase === "settle"
-          ? Haptics.ImpactFeedbackStyle.Medium
-          : Haptics.ImpactFeedbackStyle.Soft;
+    if (!this.running || myRun !== this.runId) return;
 
-    // If intensity low, avoid harshness
-    if (lvl < 0.45 && this.phase !== "peak") {
-      style = Haptics.ImpactFeedbackStyle.Soft;
+    const next = this.bedIntervalMs();
+    this.bedTimeout = setTimeout(() => void this.loopBed(myRun), next);
+  }
+
+  private async loopEnvelope(myRun: number) {
+    if (!this.running || myRun !== this.runId) return;
+
+    try {
+      if (this.phase === "peak" && this.settings.peakStyle === "snap") {
+        // SNAP mode: user controls “how many snaps occur”
+        const snaps = this.burstSnapsCount();
+        const style = this.chooseBurstStyle();
+
+        for (let k = 0; k < snaps; k++) {
+          if (!this.running || myRun !== this.runId) return;
+          await Haptics.impactAsync(style);
+          // snap spacing
+          await new Promise((r) => setTimeout(r, 55));
+        }
+      } else {
+        // MAX peak (or settle/cool): a small burst group (2–4 pulses)
+        const style = this.chooseBurstStyle();
+        const count =
+          this.phase === "peak" ? 4 : this.phase === "settle" ? 3 : 2;
+
+        for (let k = 0; k < count; k++) {
+          if (!this.running || myRun !== this.runId) return;
+          await Haptics.impactAsync(style);
+          await new Promise((r) => setTimeout(r, 60));
+        }
+      }
+    } catch {
+      // ignore
     }
 
-    // Tight spacing (ms) – peak is tighter
-    const gap = this.phase === "peak" ? 45 : 60;
+    if (!this.running || myRun !== this.runId) return;
 
-    for (let i = 0; i < hits; i++) {
-      // Cancel if stopped mid-burst
-      if (!this.running) return;
-      await Haptics.impactAsync(style);
-      if (i < hits - 1) await sleep(gap);
+    const pause = this.burstGroupPauseMs();
+    this.envTimeout = setTimeout(() => void this.loopEnvelope(myRun), pause);
+  }
+}
+// client/services/engines/ExpoHapticsEngine.ts
+import * as Haptics from "expo-haptics";
+import type { HapticPattern } from "@/types";
+
+export type PeakStyle = "max" | "snap";
+
+export type SensorySettings = {
+  useAdvancedHaptics: boolean; // ignored by Expo engine, used by future native engine
+  hapticsIntensity01: number;
+  peakStyle: PeakStyle;
+  snapDensity01: number;
+  audioVolume01: number; // not used here, but convenient to keep in one settings object
+};
+
+type Phase = "settle" | "peak" | "coolDown";
+
+const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+export class ExpoHapticsEngine {
+  private running = false;
+  private runId = 0;
+
+  private pattern: HapticPattern = "standard";
+  private phase: Phase = "settle";
+  private settings: SensorySettings = {
+    useAdvancedHaptics: false,
+    hapticsIntensity01: 0.85,
+    peakStyle: "max",
+    snapDensity01: 0.5,
+    audioVolume01: 0.6,
+  };
+
+  private bedTimeout: ReturnType<typeof setTimeout> | null = null;
+  private envTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  async init() {
+    // Expo Haptics has no explicit init requirement, but keep for parity with future engines.
+    return;
+  }
+
+  setIntensity(level01: number) {
+    this.settings.hapticsIntensity01 = clamp01(level01);
+  }
+
+  async start(pattern: HapticPattern, phase: Phase, settings: SensorySettings) {
+    this.pattern = pattern;
+    this.phase = phase;
+    this.settings = { ...this.settings, ...settings };
+    this.running = true;
+
+    // hard restart loops so phase changes feel immediate
+    this.runId++;
+    const myRun = this.runId;
+
+    this.clearTimers();
+    void this.loopBed(myRun);
+    void this.loopEnvelope(myRun);
+  }
+
+  updatePhase(phase: Phase) {
+    if (this.phase === phase) return;
+    this.phase = phase;
+
+    if (!this.running) return;
+
+    // restart loops to re-shape immediately for new phase
+    this.runId++;
+    const myRun = this.runId;
+    this.clearTimers();
+    void this.loopBed(myRun);
+    void this.loopEnvelope(myRun);
+  }
+
+  async stopAll() {
+    this.running = false;
+    this.runId++;
+    this.clearTimers();
+  }
+
+  async dispose() {
+    await this.stopAll();
+  }
+
+  // ---------- Scheduling ----------
+
+  private clearTimers() {
+    if (this.bedTimeout) clearTimeout(this.bedTimeout);
+    if (this.envTimeout) clearTimeout(this.envTimeout);
+    this.bedTimeout = null;
+    this.envTimeout = null;
+  }
+
+  private baseBedIntervalMs(): number {
+    // Baseline density by pattern
+    switch (this.pattern) {
+      case "gentle-wave":
+        return 210;
+      case "soft-pulse":
+        return 185;
+      case "standard":
+      default:
+        return 165;
     }
   }
 
-  private normalizePatternId(pattern: any) {
-    if (!pattern) return "default";
-    if (typeof pattern === "string") return pattern;
-    if (typeof pattern?.id === "string") return pattern.id;
-    if (typeof pattern?.kind === "string") return pattern.kind;
-    if (typeof pattern?.name === "string") return pattern.name;
-    return "default";
+  private phaseBedMultiplier(): number {
+    if (this.phase === "peak") return 0.78;
+    if (this.phase === "coolDown") return 1.15;
+    return 1.0; // settle
+  }
+
+  private intensityBedMultiplier(): number {
+    // higher intensity -> slightly denser
+    const i = clamp01(this.settings.hapticsIntensity01);
+    return lerp(1.22, 0.82, i);
+  }
+
+  private bedIntervalMs(): number {
+    const ms =
+      this.baseBedIntervalMs() *
+      this.phaseBedMultiplier() *
+      this.intensityBedMultiplier();
+
+    // prevent pathological rates
+    return Math.max(85, Math.min(320, Math.round(ms)));
+  }
+
+  private burstGroupPauseMs(): number {
+    // How often we create a burst group
+    // settle: slower, peak: faster, cool: slower
+    const snap = clamp01(this.settings.snapDensity01);
+
+    if (this.phase === "peak") return Math.round(lerp(420, 160, snap));
+    if (this.phase === "coolDown") return Math.round(lerp(650, 380, snap));
+    return Math.round(lerp(560, 280, snap)); // settle
+  }
+
+  private burstSnapsCount(): number {
+    // snapDensity controls “how many snaps occur” during peak when peakStyle="snap"
+    const snap = clamp01(this.settings.snapDensity01);
+    return Math.round(lerp(2, 7, snap));
+  }
+
+  private chooseBedStyle(): Haptics.ImpactFeedbackStyle | "selection" {
+    const i = clamp01(this.settings.hapticsIntensity01);
+
+    if (this.phase === "coolDown") {
+      if (i < 0.35) return "selection";
+      return Haptics.ImpactFeedbackStyle.Soft;
+    }
+
+    if (this.phase === "settle") {
+      if (i < 0.3) return "selection";
+      if (i < 0.65) return Haptics.ImpactFeedbackStyle.Light;
+      return Haptics.ImpactFeedbackStyle.Medium;
+    }
+
+    // peak
+    if (this.settings.peakStyle === "max") {
+      // your requirement: “Max” always mean 100% Heavy impacts + highest density
+      return Haptics.ImpactFeedbackStyle.Heavy;
+    }
+
+    // snap peak: still strong, but feels “snappier”
+    return i > 0.7
+      ? Haptics.ImpactFeedbackStyle.Rigid
+      : Haptics.ImpactFeedbackStyle.Heavy;
+  }
+
+  private chooseBurstStyle(): Haptics.ImpactFeedbackStyle {
+    const i = clamp01(this.settings.hapticsIntensity01);
+
+    if (this.phase === "coolDown") {
+      return i > 0.6
+        ? Haptics.ImpactFeedbackStyle.Medium
+        : Haptics.ImpactFeedbackStyle.Soft;
+    }
+
+    if (this.phase === "settle") {
+      return i > 0.7
+        ? Haptics.ImpactFeedbackStyle.Medium
+        : Haptics.ImpactFeedbackStyle.Light;
+    }
+
+    // peak
+    if (this.settings.peakStyle === "max")
+      return Haptics.ImpactFeedbackStyle.Heavy;
+    return i > 0.7
+      ? Haptics.ImpactFeedbackStyle.Rigid
+      : Haptics.ImpactFeedbackStyle.Heavy;
+  }
+
+  private async loopBed(myRun: number) {
+    if (!this.running || myRun !== this.runId) return;
+
+    try {
+      const bedStyle = this.chooseBedStyle();
+      if (bedStyle === "selection") await Haptics.selectionAsync();
+      else await Haptics.impactAsync(bedStyle);
+    } catch {
+      // ignore
+    }
+
+    if (!this.running || myRun !== this.runId) return;
+
+    const next = this.bedIntervalMs();
+    this.bedTimeout = setTimeout(() => void this.loopBed(myRun), next);
+  }
+
+  private async loopEnvelope(myRun: number) {
+    if (!this.running || myRun !== this.runId) return;
+
+    try {
+      if (this.phase === "peak" && this.settings.peakStyle === "snap") {
+        // SNAP mode: user controls “how many snaps occur”
+        const snaps = this.burstSnapsCount();
+        const style = this.chooseBurstStyle();
+
+        for (let k = 0; k < snaps; k++) {
+          if (!this.running || myRun !== this.runId) return;
+          await Haptics.impactAsync(style);
+          // snap spacing
+          await new Promise((r) => setTimeout(r, 55));
+        }
+      } else {
+        // MAX peak (or settle/cool): a small burst group (2–4 pulses)
+        const style = this.chooseBurstStyle();
+        const count =
+          this.phase === "peak" ? 4 : this.phase === "settle" ? 3 : 2;
+
+        for (let k = 0; k < count; k++) {
+          if (!this.running || myRun !== this.runId) return;
+          await Haptics.impactAsync(style);
+          await new Promise((r) => setTimeout(r, 60));
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    if (!this.running || myRun !== this.runId) return;
+
+    const pause = this.burstGroupPauseMs();
+    this.envTimeout = setTimeout(() => void this.loopEnvelope(myRun), pause);
   }
 }

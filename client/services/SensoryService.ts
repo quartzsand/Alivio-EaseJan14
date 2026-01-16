@@ -1,110 +1,94 @@
 // client/services/SensoryService.ts
+import type { HapticPattern } from "@/types";
 import { ExpoAVAudioEngine } from "@/services/audio/ExpoAVAudioEngine";
 import {
   ExpoHapticsEngine,
-  type SensorySettings,
-  type SessionPhase,
+  SensorySettings,
 } from "@/services/engines/ExpoHapticsEngine";
-import type { HapticPattern } from "@/types";
 
-export type SensoryStartArgs = {
-  pattern: HapticPattern;
-  phase: SessionPhase;
+type Phase = "settle" | "peak" | "coolDown";
 
-  audioEnabled: boolean;
+export class SensoryService {
+  private audio = new ExpoAVAudioEngine();
+  private haptics = new ExpoHapticsEngine();
 
-  hapticsIntensity01: number;
-  audioVolume01: number;
-
-  peakStyle: "max" | "snap";
-  snapDensity01: number;
-
-  useAdvancedHaptics: boolean;
-};
-
-class SensoryService {
   private initialized = false;
+  private running = false;
 
-  private engines: {
-    audio: ExpoAVAudioEngine;
-    haptics: ExpoHapticsEngine | any;
-  } | null = null;
+  private lastPattern: HapticPattern = "standard";
+  private lastSettings: SensorySettings = {
+    useAdvancedHaptics: false,
+    hapticsIntensity01: 0.85,
+    peakStyle: "max",
+    snapDensity01: 0.5,
+    audioVolume01: 0.6,
+  };
 
-  private async initIfNeeded(settings: SensorySettings) {
-    if (this.initialized && this.engines) return;
-
-    const audio = new ExpoAVAudioEngine();
-
-    // Default engine
-    let haptics: any = new ExpoHapticsEngine();
-
-    // Future upgrade path (native): try -> fallback
-    if (settings.useAdvancedHaptics) {
-      try {
-        const mod = require("./engines/CoreHapticsEngine");
-        haptics = new mod.CoreHapticsEngine();
-      } catch {
-        haptics = new ExpoHapticsEngine();
-      }
-    }
-
-    await audio.init();
-    await haptics.init();
-
-    haptics.setIntensity(settings.hapticsIntensity01);
-    await audio.setVolume(settings.audioVolume01);
-
-    this.engines = { audio, haptics };
+  async initIfNeeded() {
+    if (this.initialized) return;
+    await this.audio.init();
+    await this.haptics.init();
     this.initialized = true;
   }
 
-  async startSession(args: SensoryStartArgs) {
+  async startSession(args: {
+    pattern: HapticPattern;
+    phase: "settle" | "peak" | "coolDown";
+    audioEnabled: boolean;
+
+    hapticsIntensity01: number;
+    audioVolume01: number;
+
+    peakStyle: "max" | "snap";
+    snapDensity01: number;
+
+    useAdvancedHaptics: boolean;
+  }) {
+    await this.initIfNeeded();
+
     const settings: SensorySettings = {
       useAdvancedHaptics: !!args.useAdvancedHaptics,
       hapticsIntensity01: args.hapticsIntensity01,
-      audioVolume01: args.audioVolume01,
       peakStyle: args.peakStyle,
       snapDensity01: args.snapDensity01,
+      audioVolume01: args.audioVolume01,
     };
 
-    await this.initIfNeeded(settings);
-    if (!this.engines) return;
+    this.lastPattern = args.pattern;
+    this.lastSettings = settings;
 
-    // AUDIO: exact methods from ExpoAVAudioEngine
-    this.engines.audio.setEnabled(!!args.audioEnabled);
-    await this.engines.audio.setVolume(args.audioVolume01);
-    if (args.audioEnabled) {
-      await this.engines.audio.startLoop();
-    } else {
-      await this.engines.audio.stopAll();
-    }
+    // Audio
+    this.audio.setEnabled(args.audioEnabled);
+    await this.audio.setVolume(args.audioVolume01);
+    if (args.audioEnabled) await this.audio.startLoop();
+    else await this.audio.stopAll();
 
-    // HAPTICS
-    this.engines.haptics.setIntensity(args.hapticsIntensity01);
-    await this.engines.haptics.start(args.pattern, args.phase, settings);
+    // Haptics
+    this.haptics.setIntensity(args.hapticsIntensity01);
+    await this.haptics.start(args.pattern, args.phase, settings);
+
+    this.running = true;
   }
 
-  updatePhase(phase: SessionPhase) {
-    if (!this.engines) return;
-    this.engines.haptics.updatePhase(phase);
+  updatePhase(phase: Phase) {
+    if (!this.running) return;
+    this.haptics.updatePhase(phase);
   }
 
-  async getMusicPositionMs() {
-    if (!this.engines) return 0;
-    return await this.engines.audio.getPositionMs();
+  async getMusicPositionMs(): Promise<number> {
+    return this.audio.getPositionMs();
   }
 
   async stop() {
-    if (!this.engines) return;
-    await this.engines.haptics.stopAll();
-    await this.engines.audio.stopAll();
+    this.running = false;
+    await this.haptics.stopAll();
+    await this.audio.stopAll();
   }
 
   async dispose() {
-    if (!this.engines) return;
-    await this.engines.haptics.dispose();
-    await this.engines.audio.dispose();
-    this.engines = null;
+    await this.stop();
+    await this.haptics.dispose();
+    await this.audio.dispose();
     this.initialized = false;
   }
 }

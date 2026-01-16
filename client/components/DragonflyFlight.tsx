@@ -1,4 +1,3 @@
-// client/components/DragonflyFlight.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Dimensions, StyleSheet, ViewStyle } from "react-native";
 
@@ -31,16 +30,9 @@ function clamp(n: number, lo: number, hi: number) {
 export type DragonflyFlightProps = {
   variant: Variant;
   phase: Phase;
-
-  /** 0..1 envelope intensity (maps to scale + motion amplitude) */
-  intensity: number;
-
-  /** proxy for carrier density; higher => livelier jitter */
-  carrierDensity: number;
-
-  /** music clock position in ms; optional */
+  intensity: number; // 0..1
+  carrierDensity: number; // arbitrary “density proxy”
   musicPositionMs?: number;
-
   style?: ViewStyle;
 };
 
@@ -54,25 +46,20 @@ export function DragonflyFlight({
 }: DragonflyFlightProps) {
   const { width: W, height: H } = Dimensions.get("window");
 
-  const x = useRef(new Animated.Value(-140)).current;
+  const x = useRef(new Animated.Value(-120)).current;
   const y = useRef(new Animated.Value(H * 0.22)).current;
   const scale = useRef(new Animated.Value(1)).current;
-  const rotateDeg = useRef(new Animated.Value(0)).current;
+  const rotate = useRef(new Animated.Value(0)).current;
 
   const [dir, setDir] = useState<1 | -1>(1);
-  const dirRef = useRef<1 | -1>(1);
-
   const [pose, setPose] = useState<Pose>("hover");
 
-  const localStartRef = useRef<number>(Date.now());
-  const localStart = localStartRef.current;
-
-  // “lofi-ish” default BPM. You can later make this configurable per track.
+  const startMsRef = useRef<number>(Date.now());
   const beatBpm = 80;
   const beatPeriodMs = 60000 / beatBpm;
 
   const visualBeatHz = useMemo(() => {
-    // Map density to a human-visible “liveliness” rate (avoid flicker)
+    // carrierDensity -> a human-visible beat rate (clamped)
     return clamp(carrierDensity * 0.08, 0.8, 3.2);
   }, [carrierDensity]);
 
@@ -80,60 +67,47 @@ export function DragonflyFlight({
     () => clamp(carrierDensity * 0.25, 2, 10),
     [carrierDensity],
   );
-
   const baseScale = useMemo(
     () => 0.95 + 0.25 * clamp(intensity, 0, 1),
     [intensity],
   );
 
-  const nowMs = () => musicPositionMs ?? Date.now() - localStart;
-
-  // Cross-screen travel loop
+  // Cross-screen travel. Flip direction when finished; effect re-runs on dir change.
   useEffect(() => {
     let cancelled = false;
 
-    const run = () => {
-      if (cancelled) return;
+    const travel = W + 260;
+    const startX = dir === 1 ? -140 : travel - 140;
+    const endX = dir === 1 ? travel - 140 : -140;
 
-      const travel = W + 300;
-      const d = dirRef.current;
+    x.setValue(startX);
 
-      const startX = d === 1 ? -160 : travel - 160;
-      const endX = d === 1 ? travel - 160 : -160;
+    const baseMs = phase === "peak" ? 2600 : phase === "settle" ? 4200 : 5200;
+    const ms = clamp(baseMs - intensity * 1400, 1800, 6500);
 
-      x.setValue(startX);
+    const anim = Animated.timing(x, {
+      toValue: endX,
+      duration: ms,
+      useNativeDriver: true,
+    });
 
-      const baseMs = phase === "peak" ? 2400 : phase === "settle" ? 3900 : 5200;
-      const ms = clamp(baseMs - intensity * 1400, 1800, 6500);
-
-      Animated.timing(x, {
-        toValue: endX,
-        duration: ms,
-        useNativeDriver: true,
-      }).start(({ finished }) => {
-        if (!finished || cancelled) return;
-
-        // Flip direction for the next run
-        dirRef.current = dirRef.current === 1 ? -1 : 1;
-        setDir(dirRef.current);
-
-        setTimeout(run, 30);
-      });
-    };
-
-    run();
+    anim.start(({ finished }) => {
+      if (!finished || cancelled) return;
+      setDir((d) => (d === 1 ? -1 : 1));
+    });
 
     return () => {
       cancelled = true;
       x.stopAnimation();
     };
-  }, [W, phase, intensity, x]);
+  }, [W, dir, phase, intensity, x]);
 
-  // Pose selection loop synced to beat index
+  // Pose selection locked to beat index
   useEffect(() => {
     const id = setInterval(() => {
-      const pos = nowMs();
-      const beatIndex = Math.floor(pos / beatPeriodMs);
+      const nowMs = Date.now();
+      const posMs = musicPositionMs ?? nowMs - startMsRef.current;
+      const beatIndex = Math.floor(posMs / beatPeriodMs);
 
       if (phase === "peak") {
         if (beatIndex % 5 === 0) setPose("top_down");
@@ -147,56 +121,53 @@ export function DragonflyFlight({
     }, 220);
 
     return () => clearInterval(id);
-  }, [phase, beatPeriodMs, musicPositionMs]);
+  }, [phase, musicPositionMs, beatPeriodMs]);
 
-  // Continuous bob/scale/tilt loop (beat-locked)
+  // Beat-locked bobbing + density jitter (rAF loop, correctly cancellable)
   useEffect(() => {
     let mounted = true;
-    let rafId = 0;
+    const rafRef = { id: 0 };
 
     const tick = () => {
       if (!mounted) return;
 
-      const posMs = nowMs();
+      const nowMs = Date.now();
+      const posMs = musicPositionMs ?? nowMs - startMsRef.current;
       const posS = posMs / 1000;
-      const beatPhase01 = (posMs % beatPeriodMs) / beatPeriodMs;
+      const beatPhase = (posMs % beatPeriodMs) / beatPeriodMs;
+
       const twoPi = Math.PI * 2;
 
-      // Primary bobbing: beat-locked
       const bobAmp = 10 + 26 * clamp(intensity, 0, 1);
-      const bob = Math.sin(twoPi * beatPhase01) * bobAmp;
+      const bob = Math.sin(twoPi * beatPhase) * bobAmp;
 
-      // Small jitter: density-locked
       const jitterAmp = phase === "peak" ? 6 : 3.5;
       const jitter = Math.sin(twoPi * posS * jitterHz) * jitterAmp;
 
-      // Drift: slow variation
       const drift =
         Math.sin(twoPi * posS * visualBeatHz * 0.25) * (6 + 10 * intensity);
 
       y.setValue(H * 0.22 + bob + jitter + drift);
 
-      // Scale “breath”: envelope + beat
       const s =
         baseScale *
         (1 +
-          0.06 * Math.sin(twoPi * beatPhase01) +
+          0.06 * Math.sin(twoPi * beatPhase) +
           0.03 * Math.sin(twoPi * posS * 1.7));
       scale.setValue(s);
 
-      // Tilt increases slightly in peak
       const tilt =
-        (phase === "peak" ? 10 : 6) *
-        Math.sin(twoPi * beatPhase01 + Math.PI / 4);
-      rotateDeg.setValue(tilt);
+        (phase === "peak" ? 10 : 6) * Math.sin(twoPi * beatPhase + Math.PI / 4);
+      rotate.setValue(tilt);
 
-      rafId = requestAnimationFrame(tick);
+      rafRef.id = requestAnimationFrame(tick);
     };
 
-    rafId = requestAnimationFrame(tick);
+    rafRef.id = requestAnimationFrame(tick);
+
     return () => {
       mounted = false;
-      cancelAnimationFrame(rafId);
+      cancelAnimationFrame(rafRef.id);
     };
   }, [
     H,
@@ -209,7 +180,7 @@ export function DragonflyFlight({
     visualBeatHz,
     y,
     scale,
-    rotateDeg,
+    rotate,
   ]);
 
   const spriteSource = (SPRITES[variant][pose] ??
@@ -220,7 +191,7 @@ export function DragonflyFlight({
     { translateY: y },
     { scale },
     {
-      rotate: rotateDeg.interpolate({
+      rotate: rotate.interpolate({
         inputRange: [-20, 20],
         outputRange: ["-20deg", "20deg"],
       }),

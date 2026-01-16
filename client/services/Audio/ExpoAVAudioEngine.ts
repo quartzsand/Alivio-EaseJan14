@@ -4,7 +4,8 @@ import { Audio } from "expo-av";
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 
 // IMPORTANT: adjust path if your assets folder differs
-const ENTRAIN_LOOP = require("../../assets/audio/entrain_loop.mp3");
+const ENTRAIN_LOOP = require("../../../assets/audio/entrain_loop.mp3");
+
 
 export class ExpoAVAudioEngine {
   private loopSound: Audio.Sound | null = null;

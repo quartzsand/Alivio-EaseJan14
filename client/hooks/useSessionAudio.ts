@@ -1,10 +1,9 @@
-// client/hooks/useSessionAudio.ts
 import { useEffect, useCallback, useRef } from "react";
 import { Audio } from "expo-av";
 import { Platform } from "react-native";
 
-const START_SOUND = require("../../assets/audio/ui_start.mp3");
-const COMPLETE_SOUND = require("../../assets/audio/ui_complete.mp3");
+const START = require("../../assets/audio/ui_start.mp3");
+const COMPLETE = require("../../assets/audio/ui_complete.mp3");
 
 export function useSessionAudio(enabled: boolean) {
   const startSoundRef = useRef<Audio.Sound | null>(null);
@@ -17,23 +16,25 @@ export function useSessionAudio(enabled: boolean) {
 
     const load = async () => {
       try {
-        const { sound: startSound } = await Audio.Sound.createAsync(
-          START_SOUND,
-          { shouldPlay: false }
-        );
-        const { sound: completeSound } = await Audio.Sound.createAsync(
-          COMPLETE_SOUND,
-          { shouldPlay: false }
-        );
+        await Audio.setAudioModeAsync({ playsInSilentModeIOS: true });
+
+        const { sound: s1 } = await Audio.Sound.createAsync(START, {
+          shouldPlay: false,
+          volume: 0.9,
+        });
+        const { sound: s2 } = await Audio.Sound.createAsync(COMPLETE, {
+          shouldPlay: false,
+          volume: 0.9,
+        });
 
         if (!mounted) {
-          await startSound.unloadAsync();
-          await completeSound.unloadAsync();
+          await s1.unloadAsync();
+          await s2.unloadAsync();
           return;
         }
 
-        startSoundRef.current = startSound;
-        completeSoundRef.current = completeSound;
+        startSoundRef.current = s1;
+        completeSoundRef.current = s2;
       } catch (e) {
         console.log("UI audio load error:", e);
       }
@@ -53,24 +54,24 @@ export function useSessionAudio(enabled: boolean) {
   const playStartSound = useCallback(async () => {
     if (Platform.OS === "web" || !enabled) return;
     try {
-      const sound = startSoundRef.current;
-      if (!sound) return;
-      await sound.setPositionAsync(0);
-      await sound.playAsync();
+      const s = startSoundRef.current;
+      if (!s) return;
+      await s.setPositionAsync(0);
+      await s.playAsync();
     } catch (e) {
-      console.log("Start sound error:", e);
+      console.log("UI start sound error:", e);
     }
   }, [enabled]);
 
   const playCompleteSound = useCallback(async () => {
     if (Platform.OS === "web" || !enabled) return;
     try {
-      const sound = completeSoundRef.current;
-      if (!sound) return;
-      await sound.setPositionAsync(0);
-      await sound.playAsync();
+      const s = completeSoundRef.current;
+      if (!s) return;
+      await s.setPositionAsync(0);
+      await s.playAsync();
     } catch (e) {
-      console.log("Complete sound error:", e);
+      console.log("UI complete sound error:", e);
     }
   }, [enabled]);
 

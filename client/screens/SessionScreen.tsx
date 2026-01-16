@@ -6,14 +6,7 @@ import React, {
   useCallback,
   useMemo,
 } from "react";
-import {
-  View,
-  StyleSheet,
-  Pressable,
-  Alert,
-  Platform,
-  Animated,
-} from "react-native";
+import { View, StyleSheet, Pressable, Alert, Animated } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -27,6 +20,7 @@ import { Colors, Spacing, BorderRadius, Typography } from "@/constants/theme";
 import { sensoryService } from "@/services/SensoryService";
 import { useSessionAudio } from "@/hooks/useSessionAudio";
 import { useApp } from "@/context/AppContext";
+
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 import type { HapticPattern } from "@/types";
 import { SESSION_PHASE_PRESETS } from "@/types";
@@ -48,7 +42,6 @@ export default function SessionScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<SessionRouteProp>();
-
   const { preferences, getSiteTuning } = useApp();
 
   const site = route.params?.site;
@@ -75,20 +68,21 @@ export default function SessionScreen() {
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Animation refs
+  // Subtle UI animation refs
   const aliAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
-  // Music position for sync
+  // Music position for animation sync
   const [musicPositionMs, setMusicPositionMs] = useState(0);
 
   const { playStartSound, playCompleteSound } = useSessionAudio(
     preferences.audioEnabled,
   );
 
-  // Poll music position while running (10Hz)
+  // Poll music position while running (10 Hz)
   useEffect(() => {
     if (!isRunning) return;
+
     let cancelled = false;
 
     const id = setInterval(async () => {
@@ -106,7 +100,7 @@ export default function SessionScreen() {
     };
   }, [isRunning]);
 
-  // Determine phase from elapsed seconds
+  // Determine session phase from elapsed time
   useEffect(() => {
     if (!isRunning) {
       setCurrentPhase("idle");
@@ -117,7 +111,7 @@ export default function SessionScreen() {
     else if (timeElapsed < phases.settle + phases.peak) setCurrentPhase("peak");
     else if (timeElapsed < totalDuration) setCurrentPhase("cool");
     else setCurrentPhase("complete");
-  }, [timeElapsed, isRunning, phases, totalDuration]);
+  }, [isRunning, timeElapsed, phases, totalDuration]);
 
   // Auto-end when complete
   useEffect(() => {
@@ -127,18 +121,19 @@ export default function SessionScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPhase, isRunning]);
 
-  // Update haptics engine when phase changes
+  // Inform haptics engine when phase changes
   useEffect(() => {
     if (!isRunning) return;
     if (currentPhase === "idle" || currentPhase === "complete") return;
+
     sensoryService.updatePhase(
       currentPhase === "cool" ? "coolDown" : currentPhase,
     );
   }, [currentPhase, isRunning]);
 
-  // Background animations (subtle UI)
+  // Background UI animations + cleanup
   useEffect(() => {
-    Animated.loop(
+    const a1 = Animated.loop(
       Animated.sequence([
         Animated.timing(aliAnim, {
           toValue: 1,
@@ -151,9 +146,9 @@ export default function SessionScreen() {
           useNativeDriver: true,
         }),
       ]),
-    ).start();
+    );
 
-    Animated.loop(
+    const a2 = Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, {
           toValue: 1.05,
@@ -166,7 +161,10 @@ export default function SessionScreen() {
           useNativeDriver: true,
         }),
       ]),
-    ).start();
+    );
+
+    a1.start();
+    a2.start();
 
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
@@ -174,13 +172,14 @@ export default function SessionScreen() {
         deactivateKeepAwake();
       } catch {}
       void sensoryService.stop();
+      a1.stop();
+      a2.stop();
     };
   }, [aliAnim, pulseAnim]);
 
   // -----------------------
-  // Dragonfly alignment logic (12/6/6)
+  // Dragonfly alignment logic (12/6/6 and beat-locked)
   // -----------------------
-
   const beatBpm = 80;
   const beatPeriodMs = 60000 / beatBpm;
 
@@ -240,7 +239,6 @@ export default function SessionScreen() {
   ]);
 
   const dragonflyCarrierDensity = useMemo(() => {
-    // Start from pattern base then scale by user intensity + snap density + phase
     const patternBase =
       selectedPattern === "standard"
         ? 26
@@ -251,7 +249,6 @@ export default function SessionScreen() {
     const user = clamp01(effectiveIntensity);
     const snap = clamp01(effectiveSnapDensity);
 
-    // Phase multiplier: peak is most lively
     const phaseMul =
       currentPhase === "peak"
         ? 1.25
@@ -261,10 +258,7 @@ export default function SessionScreen() {
             ? 0.85
             : 0.8;
 
-    // Snap density makes motion livelier, but keep bounded
     const snapMul = 0.85 + 0.55 * snap;
-
-    // Intensity adds some liveliness
     const intMul = 0.75 + 0.55 * user;
 
     return patternBase * phaseMul * snapMul * intMul;
@@ -273,7 +267,6 @@ export default function SessionScreen() {
   // -------------
   // Session handlers
   // -------------
-
   const startSession = useCallback(async () => {
     try {
       await activateKeepAwakeAsync();
@@ -289,7 +282,6 @@ export default function SessionScreen() {
       await playStartSound();
     }
 
-    // Start orchestrated audio + haptics (no direct HapticsService calls)
     await sensoryService.startSession({
       pattern: selectedPattern,
       phase: "settle",
@@ -360,7 +352,6 @@ export default function SessionScreen() {
   // -------------
   // UI
   // -------------
-
   const dragonflyVariant = preferences.dragonflyVariant ?? "blue";
 
   return (
@@ -390,6 +381,7 @@ export default function SessionScreen() {
 
         <DragonflyFlight
           variant={dragonflyVariant}
+          // DragonflyFlight prop type expects "idle|settle|peak|cool"
           phase={dragonflyPhase as any}
           intensity={dragonflyIntensity01}
           carrierDensity={dragonflyCarrierDensity}
@@ -420,6 +412,7 @@ export default function SessionScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+
   closeBtn: {
     position: "absolute",
     top: 14,
@@ -427,21 +420,25 @@ const styles = StyleSheet.create({
     zIndex: 10,
     padding: 10,
   },
+
   header: {
     paddingHorizontal: Spacing.lg,
     paddingTop: 12,
     paddingBottom: 10,
   },
+
   title: {
     fontSize: Typography.h1,
     color: Colors.text,
     fontWeight: "700",
   },
+
   subtitle: {
     marginTop: 4,
     fontSize: Typography.body,
     color: Colors.muted,
   },
+
   stage: {
     flex: 1,
     marginHorizontal: Spacing.lg,
@@ -450,6 +447,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
+
   orb: {
     width: 180,
     height: 180,
@@ -458,10 +456,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.12)",
   },
+
   controls: {
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.lg,
   },
+
   primaryBtn: {
     height: 54,
     borderRadius: 16,
@@ -471,6 +471,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+
   primaryBtnText: {
     color: Colors.text,
     fontSize: 18,

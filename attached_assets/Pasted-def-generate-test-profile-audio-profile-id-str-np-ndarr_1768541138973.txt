@@ -1,0 +1,86 @@
+def generate_test_profile_audio(profile_id: str) -> np.ndarray:
+    """Generate validation test audio with precise iPhone optimization"""
+    
+    profile = TEST_PROFILES[profile_id]
+    duration = profile['duration']
+    t = np.linspace(0, duration, int(SAMPLE_RATE * duration))
+    
+    if profile_id == 'test_gate_control':
+        # Test A: Pure Gate Control Theory Implementation
+        # Continuous 180Hz sine wave (iPhone speaker sweet spot)
+        primary_freq = 180
+        gate_control_wave = np.sin(2 * np.pi * primary_freq * t)
+        
+        # Add minimal chassis coupling
+        chassis_freq = 170  # iPhone LRA resonance
+        chassis_component = 0.3 * np.sin(2 * np.pi * chassis_freq * t)
+        
+        test_audio = 0.7 * gate_control_wave + 0.3 * chassis_component
+        
+    elif profile_id == 'test_massage_simulation':
+        # Test B: Enhanced Massage Gun Simulation
+        primary_freq = 120  # Lowest meaningful iPhone frequency
+        
+        # Enhanced saw^8 pulses for distinct mechanical feeling
+        saw_wave = signal.sawtooth(2 * np.pi * primary_freq * t)
+        enhanced_pulses = np.sign(saw_wave) * (np.abs(saw_wave) ** 8)
+        
+        # 100 BPM gating (massage rhythm)
+        pulse_freq = 100 / 60  # Convert BPM to Hz
+        gate = (signal.square(2 * np.pi * pulse_freq * t, duty=0.6) + 1) / 2
+        
+        gated_pulses = enhanced_pulses * gate
+        
+        # Harmonic simulation for perceived low frequency
+        harmonic_240 = 0.4 * np.sin(2 * np.pi * 240 * t)
+        
+        # 10-second entrainment ramp (sympathetic down-regulation)
+        ramp_samples = int(10 * SAMPLE_RATE) if duration >= 30 else int(3 * SAMPLE_RATE)
+        ramp = np.ones_like(t)
+        ramp[:ramp_samples] = np.linspace(0.2, 1.0, ramp_samples)
+        
+        test_audio = (0.6 * gated_pulses + 0.4 * harmonic_240) * ramp
+    
+    # Apply gentle envelope
+    envelope = apply_comfort_envelope(test_audio, duration)
+    
+    # Normalize for iPhone output
+    final_test_audio = envelope / np.max(np.abs(envelope)) * 0.85
+    
+    return final_test_audio
+
+# Generate both test files
+def generate_test_files():
+    """Generate both validation test audio files"""
+    
+    for profile_id in TEST_PROFILES.keys():
+        print(f"🧪 Generating test profile: {profile_id}")
+        
+        test_audio = generate_test_profile_audio(profile_id)
+        filename = f"test-{profile_id}-{TEST_PROFILES[profile_id]['duration']}s.wav"
+        
+        # Save to test subdirectory
+        test_dir = Path("assets/audio/test-profiles")
+        test_dir.mkdir(parents=True, exist_ok=True)
+        
+        filepath = test_dir / filename
+        audio_int16 = (test_audio * 32767).astype(np.int16)
+        wavfile.write(filepath, SAMPLE_RATE, audio_int16)
+        
+        print(f"✅ Test audio saved: {filepath}")
+```
+
+---
+
+## **✅ INTEGRATION SUMMARY**
+
+### **Settings Menu Structure:**
+```
+Alivio Ease Settings
+├── Visual Experience
+│   └── Visual Breathing Timer [Toggle]
+├── Advanced Options  
+│   ├── Test Profiles [Toggle] ⚠️
+│   └── Audio Analysis [Toggle] 🔬
+└── About
+    └── Version & Info
