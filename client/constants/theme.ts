@@ -6,6 +6,7 @@ export const Colors = {
     accent: "#A8D5BA",
     background: "#F7F9FC",
     surface: "#FFFFFF",
+    card: "#FFFFFF",
     text: "#2C3E50",
     textSecondary: "#7C8B9C",
     border: "#E4E9F0",
@@ -67,6 +68,16 @@ export const BorderRadius = {
 };
 
 export const Typography = {
+  sizes: {
+    xs: 12,
+    sm: 14,
+    md: 16,
+    lg: 18,
+    xl: 20,
+    "2xl": 24,
+    "3xl": 28,
+    "4xl": 32,
+  },
   headline: {
     fontSize: 28,
     fontWeight: "700" as const,

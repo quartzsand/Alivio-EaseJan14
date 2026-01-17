@@ -2,8 +2,8 @@ import { useEffect, useCallback, useRef } from "react";
 import { Audio } from "expo-av";
 import { Platform } from "react-native";
 
-const START = require("../../assets/audio/ui_start.mp3");
-const COMPLETE = require("../../assets/audio/ui_complete.mp3");
+const START = require("../../assets/audio/ui_start.wav");
+const COMPLETE = require("../../assets/audio/ui_complete.wav");
 
 export function useSessionAudio(enabled: boolean) {
   const startSoundRef = useRef<Audio.Sound | null>(null);

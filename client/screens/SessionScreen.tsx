@@ -1,546 +1,618 @@
-// client/screens/SessionScreen.tsx - COMPLETE FILE
-import React, { useState, useEffect, useRef } from "react";
+// client/screens/SessionScreen.tsx
+// FINAL VERSION: Integrated with VisualBreathingTimer, DragonflyFlight, and full phase management
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useMemo,
+} from "react";
 import {
   View,
-  Text,
   StyleSheet,
-  SafeAreaView,
+  Pressable,
+  Alert,
   Animated,
   Dimensions,
-  TouchableOpacity,
-  Alert,
+  ScrollView,
 } from "react-native";
-import { useNavigation, useRoute } from "@react-navigation/native";
-import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import * as KeepAwake from "expo-keep-awake";
+import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { Feather } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 
-import { SensoryService, SensorySession } from "../services/SensoryService";
+import { ThemedText } from "@/components/ThemedText";
+import { DragonflyFlight } from "@/components/DragonflyFlight";
+import { VisualBreathingTimer } from "@/components/VisualBreathingTimer";
+import { Colors, Spacing, BorderRadius, Typography } from "@/constants/theme";
+import { sensoryService } from "@/services/SensoryService";
+import { useApp } from "@/context/AppContext";
+
+import type { RootStackParamList } from "@/navigation/RootStackNavigator";
+import type { HapticPattern, SessionDuration } from "@/types";
+import { SESSION_PHASE_PRESETS } from "@/types";
+import type { SensoryProfile, TextureVariation } from "@/services/audio/ExpoAVAudioEngine";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
-const PHASE_CONFIGS = {
-  18: { prep: 3, active: 12, cool: 3 },
-  24: { prep: 4, active: 16, cool: 4 },
-  30: { prep: 5, active: 20, cool: 5 },
-};
+type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
+type SessionRouteProp = RouteProp<RootStackParamList, "Session">;
+
+type SessionPhase = "idle" | "settle" | "peak" | "cool" | "complete";
+
+function clamp01(x: number) {
+  return Math.max(0, Math.min(1, x));
+}
+
+function lerp(a: number, b: number, t: number) {
+  return a + (b - a) * t;
+}
 
 export default function SessionScreen() {
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation();
-  const route = useRoute();
+  const navigation = useNavigation<NavigationProp>();
+  const route = useRoute<SessionRouteProp>();
+  const { preferences, getSiteTuning, addSession } = useApp();
 
-  const { preferences } = route.params || {};
-  const sessionDuration = preferences?.defaultDuration || 24;
-  const selectedSite = preferences?.preferredSite || "thigh";
+  // Get session parameters from route or preferences
+  const site = route.params?.site;
+  const duration: SessionDuration =
+    (route.params?.duration as SessionDuration) ||
+    preferences.selectedDuration ||
+    24;
 
-  const [sensoryService] = useState(() => new SensoryService());
+  // Phase timing configuration
+  const phases = SESSION_PHASE_PRESETS[duration];
+  const totalDuration = phases.settle + phases.peak + phases.cool;
 
-  const [currentPhase, setCurrentPhase] = useState("idle");
+  // Get site-specific tuning or use defaults
+  const siteTuning = site ? getSiteTuning(site) : undefined;
+
+  const effectiveIntensity =
+    siteTuning?.hapticIntensity ?? preferences.hapticIntensity;
+  const effectiveSnapDensity =
+    siteTuning?.snapDensity ?? preferences.snapDensity;
+  const effectivePeakStyle = siteTuning?.peakStyle ?? preferences.peakStyle;
+  const effectiveAudioVolume =
+    siteTuning?.audioVolume ?? preferences.audioVolume;
+
+  // Sensory profile settings (could come from route or preferences)
+  const sensoryProfile: SensoryProfile =
+    (route.params as any)?.sensoryProfile || "edge";
+  const textureVariation: TextureVariation =
+    (route.params as any)?.textureVariation || "constantflow";
+
+  // Session state
   const [isRunning, setIsRunning] = useState(false);
-  const [timeRemaining, setTimeRemaining] = useState(sessionDuration);
-  const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
-  const [phaseTimeRemaining, setPhaseTimeRemaining] = useState(0);
+  const [timeElapsed, setTimeElapsed] = useState(0);
+  const [currentPhase, setCurrentPhase] = useState<SessionPhase>("idle");
+  const [selectedPattern, setSelectedPattern] =
+    useState<HapticPattern>("standard");
 
-  const dragonflyX = useRef(new Animated.Value(-100)).current;
-  const dragonflyY = useRef(new Animated.Value(screenHeight * 0.33)).current;
-  const backgroundOpacity = useRef(new Animated.Value(0)).current;
-  const scaleValue = useRef(new Animated.Value(1)).current;
-  const rotateValue = useRef(new Animated.Value(0)).current;
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const sessionStartTimeRef = useRef<Date | null>(null);
 
-  const phaseConfig = PHASE_CONFIGS[sessionDuration] || PHASE_CONFIGS[24];
+  // Music position for dragonfly sync
+  const [musicPositionMs, setMusicPositionMs] = useState(0);
 
+  // Poll music position while running (10 Hz)
   useEffect(() => {
-    KeepAwake.activateKeepAwakeAsync();
-    sensoryService.onPhaseChange = handlePhaseChange;
+    if (!isRunning) return;
+
+    let cancelled = false;
+
+    const id = setInterval(async () => {
+      try {
+        const ms = await sensoryService.getMusicPositionMs();
+        if (!cancelled) setMusicPositionMs(ms);
+      } catch {
+        // ignore
+      }
+    }, 100);
 
     return () => {
-      KeepAwake.deactivateKeepAwake();
-      handleStop();
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [isRunning]);
+
+  // Determine session phase from elapsed time
+  useEffect(() => {
+    if (!isRunning) {
+      setCurrentPhase("idle");
+      return;
+    }
+
+    if (timeElapsed < phases.settle) setCurrentPhase("settle");
+    else if (timeElapsed < phases.settle + phases.peak) setCurrentPhase("peak");
+    else if (timeElapsed < totalDuration) setCurrentPhase("cool");
+    else setCurrentPhase("complete");
+  }, [isRunning, timeElapsed, phases, totalDuration]);
+
+  // Auto-end when complete
+  useEffect(() => {
+    if (currentPhase === "complete" && isRunning) {
+      void handleEndSession();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPhase, isRunning]);
+
+  // Inform haptics engine when phase changes
+  useEffect(() => {
+    if (!isRunning) return;
+    if (currentPhase === "idle" || currentPhase === "complete") return;
+
+    sensoryService.updatePhase(
+      currentPhase === "cool" ? "coolDown" : currentPhase
+    );
+  }, [currentPhase, isRunning]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      try {
+        deactivateKeepAwake();
+      } catch {}
+      void sensoryService.stop();
     };
   }, []);
 
-  useEffect(() => {
-    if (isRunning && timeRemaining > 0) {
-      const timer = setTimeout(() => {
-        setTimeRemaining((prev) => prev - 1);
-        setPhaseTimeRemaining((prev) => Math.max(0, prev - 1));
-      }, 1000);
-      return () => clearTimeout(timer);
-    } else if (timeRemaining === 0 && isRunning) {
-      handleSessionComplete();
+  // Dragonfly alignment logic (phase-aware)
+  const beatBpm = 80;
+  const beatPeriodMs = 60000 / beatBpm;
+
+  const phaseProgress01 = useMemo(() => {
+    if (!isRunning) return 0;
+    if (currentPhase === "settle") return clamp01(timeElapsed / phases.settle);
+    if (currentPhase === "peak")
+      return clamp01((timeElapsed - phases.settle) / phases.peak);
+    if (currentPhase === "cool")
+      return clamp01((timeElapsed - phases.settle - phases.peak) / phases.cool);
+    return 0;
+  }, [isRunning, currentPhase, timeElapsed, phases]);
+
+  const dragonflyPhase = useMemo(() => {
+    if (currentPhase === "settle") return "settle";
+    if (currentPhase === "peak") return "peak";
+    if (currentPhase === "cool") return "cool";
+    return "idle";
+  }, [currentPhase]);
+
+  const beatPhase01 = useMemo(() => {
+    if (!musicPositionMs) return 0;
+    return (musicPositionMs % beatPeriodMs) / beatPeriodMs;
+  }, [musicPositionMs, beatPeriodMs]);
+
+  const dragonflyIntensity01 = useMemo(() => {
+    const user = clamp01(effectiveIntensity);
+
+    if (!isRunning) return 0.15;
+
+    if (currentPhase === "settle") {
+      const base = lerp(0.35, 0.75, phaseProgress01);
+      return clamp01(base * (0.75 + 0.35 * user));
     }
-  }, [isRunning, timeRemaining]);
 
-  const handlePhaseChange = (
-    previousPhase: string,
-    newPhase: string,
-    running: boolean,
-  ) => {
-    console.log(`Phase changed: ${previousPhase} -> ${newPhase}`);
-    setCurrentPhase(newPhase);
-    setIsRunning(running);
-
-    switch (newPhase) {
-      case "prep":
-        setPhaseTimeRemaining(phaseConfig.prep);
-        startPrepAnimations();
-        sensoryService.playAudioFeedback("start");
-        break;
-      case "active":
-        setPhaseTimeRemaining(phaseConfig.active);
-        startActiveAnimations();
-        sensoryService.playAudioFeedback("phase");
-        break;
-      case "cool":
-        setPhaseTimeRemaining(phaseConfig.cool);
-        startCoolAnimations();
-        break;
-      case "complete":
-        setPhaseTimeRemaining(0);
-        startCompleteAnimations();
-        sensoryService.playAudioFeedback("complete");
-        break;
+    if (currentPhase === "peak") {
+      const tremor = 0.06 * Math.sin(Math.PI * 2 * beatPhase01);
+      const base = 0.92 + tremor;
+      return clamp01(base * (0.8 + 0.3 * user));
     }
-  };
 
-  const startSession = async () => {
+    if (currentPhase === "cool") {
+      const base = lerp(0.7, 0.3, phaseProgress01);
+      return clamp01(base * (0.85 + 0.25 * user));
+    }
+
+    return 0.2;
+  }, [
+    isRunning,
+    currentPhase,
+    phaseProgress01,
+    beatPhase01,
+    effectiveIntensity,
+  ]);
+
+  const dragonflyCarrierDensity = useMemo(() => {
+    const patternBase =
+      selectedPattern === "standard"
+        ? 26
+        : selectedPattern === "gentle-wave"
+          ? 18
+          : 22;
+
+    const user = clamp01(effectiveIntensity);
+    const snap = clamp01(effectiveSnapDensity);
+
+    const phaseMul =
+      currentPhase === "peak"
+        ? 1.25
+        : currentPhase === "settle"
+          ? 1.0
+          : currentPhase === "cool"
+            ? 0.85
+            : 0.8;
+
+    const snapMul = 0.85 + 0.55 * snap;
+    const intMul = 0.75 + 0.55 * user;
+
+    return patternBase * phaseMul * snapMul * intMul;
+  }, [selectedPattern, currentPhase, effectiveIntensity, effectiveSnapDensity]);
+
+  // Session handlers
+  const startSession = useCallback(async () => {
     try {
-      setSessionStartTime(new Date());
-      setTimeRemaining(sessionDuration);
-      setIsRunning(true);
-
-      await sensoryService.startSession(sessionDuration, selectedSite);
-      startDragonflyAnimation();
-    } catch (error) {
-      console.error("Error starting session:", error);
-      Alert.alert("Error", "Failed to start session. Please try again.");
+      await activateKeepAwakeAsync();
+    } catch {
+      console.log("Keep awake not available");
     }
-  };
 
-  const handleStop = () => {
+    setIsRunning(true);
+    setTimeElapsed(0);
+    setCurrentPhase("settle");
+    sessionStartTimeRef.current = new Date();
+
+    // Play start sound
+    if (preferences.audioEnabled) {
+      await sensoryService.playUISound("ui_start");
+    }
+
+    // Start sensory session with full configuration
+    await sensoryService.startSession({
+      pattern: selectedPattern,
+      phase: "settle",
+      audioEnabled: preferences.audioEnabled,
+      hapticsIntensity01: effectiveIntensity,
+      audioVolume01: effectiveAudioVolume,
+      peakStyle: effectivePeakStyle,
+      snapDensity01: effectiveSnapDensity,
+      useAdvancedHaptics: preferences.useAdvancedHaptics ?? false,
+      sensoryProfile,
+      textureVariation,
+      sessionDuration: duration,
+    });
+
+    // Start timer
+    timerRef.current = setInterval(() => {
+      setTimeElapsed((prev) => prev + 1);
+    }, 1000);
+  }, [
+    preferences,
+    selectedPattern,
+    effectiveIntensity,
+    effectiveAudioVolume,
+    effectivePeakStyle,
+    effectiveSnapDensity,
+    sensoryProfile,
+    textureVariation,
+    duration,
+  ]);
+
+  const handleEndSession = useCallback(async () => {
+    // Stop timer
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+
+    // Stop sensory service
+    await sensoryService.stop();
+
+    // Play completion sound
+    if (preferences.audioEnabled) {
+      await sensoryService.playUISound("ui_complete");
+    }
+
     try {
-      if (sensoryService && typeof sensoryService.stop === "function") {
-        sensoryService.stop();
-      }
+      deactivateKeepAwake();
+    } catch {}
 
-      setIsRunning(false);
-      setCurrentPhase("idle");
-      setTimeRemaining(sessionDuration);
-      setPhaseTimeRemaining(0);
+    setIsRunning(false);
+    setCurrentPhase("complete");
 
-      resetAnimations();
-    } catch (error) {
-      console.error("Error stopping session:", error);
+    // Save session to history
+    if (sessionStartTimeRef.current) {
+      await addSession({
+        id: Date.now().toString(),
+        date: sessionStartTimeRef.current.toISOString(),
+        duration,
+        hapticPattern: selectedPattern,
+        comfortRating: 4, // Default - could show rating modal
+        site: site,
+      });
     }
-  };
 
-  const handleSessionComplete = async () => {
-    try {
-      handleStop();
-
-      if (sessionStartTime) {
-        const session: SensorySession = {
-          id: Date.now().toString(),
-          startTime: sessionStartTime.toISOString(),
-          duration: sessionDuration,
-          site: selectedSite,
-          intensity: preferences?.vibrationIntensity || 0.7,
-          completedSuccessfully: true,
-        };
-
-        await sensoryService.saveSession(session);
-      }
-
-      Alert.alert(
-        "Session Complete! 🎉",
-        `Great job completing your ${sessionDuration}-second comfort session at your ${selectedSite}!`,
-        [
-          {
-            text: "Rate Experience",
-            onPress: () => showRatingDialog(),
-          },
-          {
-            text: "Done",
-            onPress: () => navigation.goBack(),
-            style: "cancel",
-          },
-        ],
-      );
-    } catch (error) {
-      console.error("Error completing session:", error);
-    }
-  };
-
-  const showRatingDialog = () => {
+    // Navigate to comfort rating or show completion alert
     Alert.alert(
-      "How was your session?",
-      "Your feedback helps us improve the experience",
+      "Session Complete! 🎉",
+      `Great job completing your ${duration}-second comfort session!`,
       [
-        { text: "Great! 😊", onPress: () => navigation.goBack() },
-        { text: "Good 👍", onPress: () => navigation.goBack() },
-        { text: "Could be better 🤔", onPress: () => navigation.goBack() },
-      ],
+        {
+          text: "Rate Experience",
+          onPress: () => {
+            navigation.navigate("ComfortRating", {
+              sessionId: Date.now().toString(),
+              duration,
+              hapticPattern: selectedPattern,
+              site,
+            });
+          },
+        },
+        {
+          text: "Done",
+          onPress: () => navigation.goBack(),
+          style: "cancel",
+        },
+      ]
     );
-  };
+  }, [preferences, duration, selectedPattern, site, addSession, navigation]);
 
-  const startDragonflyAnimation = () => {
-    dragonflyX.setValue(-100);
-    dragonflyY.setValue(screenHeight * 0.33);
-
-    Animated.timing(dragonflyX, {
-      toValue: screenWidth + 100,
-      duration: sessionDuration * 1000,
-      useNativeDriver: true,
-    }).start();
-
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(rotateValue, {
-          toValue: 1,
-          duration: 400,
-          useNativeDriver: true,
-        }),
-        Animated.timing(rotateValue, {
-          toValue: 0,
-          duration: 400,
-          useNativeDriver: true,
-        }),
-      ]),
-    ).start();
-  };
-
-  const startPrepAnimations = () => {
-    Animated.timing(backgroundOpacity, {
-      toValue: 0.3,
-      duration: 2000,
-      useNativeDriver: false,
-    }).start();
-
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(dragonflyY, {
-          toValue: screenHeight * 0.33 - 15,
-          duration: 2000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(dragonflyY, {
-          toValue: screenHeight * 0.33 + 15,
-          duration: 2000,
-          useNativeDriver: true,
-        }),
-      ]),
-    ).start();
-  };
-
-  const startActiveAnimations = () => {
-    Animated.parallel([
-      Animated.timing(backgroundOpacity, {
-        toValue: 0.6,
-        duration: 1000,
-        useNativeDriver: false,
-      }),
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(scaleValue, {
-            toValue: 1.05,
-            duration: 800,
-            useNativeDriver: true,
-          }),
-          Animated.timing(scaleValue, {
-            toValue: 1.0,
-            duration: 800,
-            useNativeDriver: true,
-          }),
-        ]),
-      ),
-    ]).start();
-
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(dragonflyY, {
-          toValue: screenHeight * 0.33 - 25,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-        Animated.timing(dragonflyY, {
-          toValue: screenHeight * 0.33 + 20,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-      ]),
-    ).start();
-  };
-
-  const startCoolAnimations = () => {
-    Animated.timing(backgroundOpacity, {
-      toValue: 0.4,
-      duration: 2000,
-      useNativeDriver: false,
-    }).start();
-
-    Animated.timing(dragonflyY, {
-      toValue: screenHeight * 0.33 + 30,
-      duration: 1500,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const startCompleteAnimations = () => {
-    Animated.sequence([
-      Animated.timing(scaleValue, {
-        toValue: 1.2,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(scaleValue, {
-        toValue: 1.0,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-    ]).start();
-
-    Animated.timing(dragonflyY, {
-      toValue: screenHeight * 0.33 + 40,
-      duration: 1000,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const resetAnimations = () => {
-    dragonflyX.stopAnimation();
-    dragonflyY.stopAnimation();
-    backgroundOpacity.stopAnimation();
-    scaleValue.stopAnimation();
-    rotateValue.stopAnimation();
-
-    dragonflyX.setValue(-100);
-    dragonflyY.setValue(screenHeight * 0.33);
-    backgroundOpacity.setValue(0);
-    scaleValue.setValue(1);
-    rotateValue.setValue(0);
-  };
-
-  const getPhaseColor = () => {
-    switch (currentPhase) {
-      case "prep":
-        return "rgba(52, 152, 219, 0.3)";
-      case "active":
-        return "rgba(46, 204, 113, 0.6)";
-      case "cool":
-        return "rgba(155, 89, 182, 0.4)";
-      case "complete":
-        return "rgba(241, 196, 15, 0.5)";
-      default:
-        return "rgba(0, 0, 0, 0)";
+  const handleCancelSession = useCallback(async () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
     }
-  };
 
-  const getPhaseDescription = () => {
+    await sensoryService.stop();
+
+    try {
+      deactivateKeepAwake();
+    } catch {}
+
+    setIsRunning(false);
+    setTimeElapsed(0);
+    setCurrentPhase("idle");
+  }, []);
+
+  const timeRemaining = Math.max(0, totalDuration - timeElapsed);
+
+  // Phase colors for gradient
+  const getPhaseColors = (): [string, string] => {
     switch (currentPhase) {
-      case "prep":
-        return "Getting ready... Relax and breathe 🔵";
-      case "active":
-        return "Perfect time for injection! 💚";
+      case "settle":
+        return ["#E3F2FD", "#BBDEFB"];
+      case "peak":
+        return ["#FFEBEE", "#FFCDD2"];
       case "cool":
-        return "Cooling down... Almost finished 💜";
-      case "complete":
-        return "All finished! Great job! 🎉";
+        return ["#E8F5E9", "#C8E6C9"];
       default:
-        return "Ready to start your comfort session";
+        return ["#F8F9FA", "#E8EAED"];
     }
-  };
-
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
-  };
-
-  const getSiteEmoji = (site: string) => {
-    const siteEmojis = {
-      finger: "👆",
-      "upper-arm": "💪",
-      thigh: "🦵",
-      abdomen: "🤰",
-    };
-    return siteEmojis[site] || "🎯";
-  };
-
-  const getProgressPercentage = () => {
-    return Math.max(0, (1 - timeRemaining / sessionDuration) * 100);
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <Animated.View
-        style={[
-          styles.backgroundOverlay,
-          {
-            backgroundColor: getPhaseColor(),
-            opacity: backgroundOpacity,
-          },
-        ]}
+    <View style={styles.container}>
+      <LinearGradient
+        colors={getPhaseColors()}
+        style={StyleSheet.absoluteFill}
       />
 
-      <View style={[styles.header, { paddingTop: insets.top }]}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-          disabled={isRunning}
-        >
-          <Feather
-            name="x"
-            size={24}
-            color={isRunning ? "#BDC3C7" : "#2C3E50"}
-          />
-        </TouchableOpacity>
+      {/* Dragonfly Animation */}
+      {isRunning && (
+        <DragonflyFlight
+          variant={preferences.dragonflyVariant}
+          phase={dragonflyPhase}
+          intensity={dragonflyIntensity01}
+          carrierDensity={dragonflyCarrierDensity}
+          musicPositionMs={musicPositionMs}
+          style={styles.dragonfly}
+        />
+      )}
 
-        <Text style={styles.headerTitle}>
-          {getSiteEmoji(selectedSite)}{" "}
-          {selectedSite.charAt(0).toUpperCase() + selectedSite.slice(1)} •{" "}
-          {sessionDuration}s
-        </Text>
+      {/* Header */}
+      <View style={[styles.header, { paddingTop: insets.top + Spacing.md }]}>
+        <Pressable
+          style={styles.backButton}
+          onPress={() => {
+            if (isRunning) {
+              Alert.alert(
+                "End Session?",
+                "Are you sure you want to end your session early?",
+                [
+                  { text: "Continue", style: "cancel" },
+                  {
+                    text: "End Session",
+                    style: "destructive",
+                    onPress: async () => {
+                      await handleCancelSession();
+                      navigation.goBack();
+                    },
+                  },
+                ]
+              );
+            } else {
+              navigation.goBack();
+            }
+          }}
+        >
+          <Feather name="x" size={24} color={Colors.light.text} />
+        </Pressable>
+
+        <ThemedText style={styles.headerTitle}>
+          {site
+            ? `${site.charAt(0).toUpperCase() + site.slice(1)} • ${duration}s`
+            : `${duration}s Session`}
+        </ThemedText>
 
         <View style={styles.headerSpacer} />
       </View>
 
-      <View style={styles.content}>
-        <Animated.View
-          style={[
-            styles.timerContainer,
-            { transform: [{ scale: scaleValue }] },
-          ]}
-        >
-          <Text style={styles.timerText}>{formatTime(timeRemaining)}</Text>
-          <Text style={styles.phaseText}>
-            {currentPhase.toUpperCase()}
-            {phaseTimeRemaining > 0 && (
-              <Text style={styles.phaseTimer}>
-                {" "}
-                • {phaseTimeRemaining}s left in phase
-              </Text>
-            )}
-          </Text>
-        </Animated.View>
+      {/* Main Content */}
+      <ScrollView 
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Visual Breathing Timer - Main Feature */}
+        <VisualBreathingTimer
+          timeRemaining={timeRemaining}
+          totalDuration={totalDuration}
+          phase={currentPhase}
+          intensity={effectiveIntensity}
+          isRunning={isRunning}
+          musicPositionMs={musicPositionMs}
+          reduceMotion={false}
+        />
 
-        <Animated.View
-          style={[
-            styles.dragonflyContainer,
-            {
-              transform: [
-                { translateX: dragonflyX },
-                { translateY: dragonflyY },
-                {
-                  rotateZ: rotateValue.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ["0deg", "15deg"],
-                  }),
-                },
-              ],
-            },
-          ]}
-          pointerEvents="none"
-        >
-          <Text style={styles.dragonflyEmoji}>🦋</Text>
-        </Animated.View>
-
-        <View style={styles.statusContainer}>
-          <Text style={styles.statusText}>{getPhaseDescription()}</Text>
-
-          {currentPhase !== "idle" && (
-            <View style={styles.phaseProgressContainer}>
-              <View style={styles.phaseProgressBar}>
-                <Animated.View
+        {/* Phase Progress Indicators */}
+        {isRunning && (
+          <View style={styles.phaseIndicators}>
+            <View style={styles.phaseRow}>
+              {["settle", "peak", "cool"].map((phase) => (
+                <View
+                  key={phase}
                   style={[
-                    styles.phaseProgress,
-                    {
-                      width: `${getProgressPercentage()}%`,
-                      backgroundColor:
-                        currentPhase === "active" ? "#2ECC71" : "#3498DB",
-                    },
+                    styles.phaseIndicator,
+                    currentPhase === phase && styles.phaseIndicatorActive,
                   ]}
-                />
-              </View>
-              <Text style={styles.progressText}>
-                {Math.round(getProgressPercentage())}% complete
-              </Text>
+                >
+                  <ThemedText
+                    style={[
+                      styles.phaseIndicatorText,
+                      currentPhase === phase && styles.phaseIndicatorTextActive,
+                    ]}
+                  >
+                    {phase.charAt(0).toUpperCase() + phase.slice(1)}
+                  </ThemedText>
+                </View>
+              ))}
             </View>
-          )}
 
-          {currentPhase !== "idle" && (
-            <View style={styles.phaseIndicators}>
+            {/* Progress bar */}
+            <View style={styles.progressBar}>
               <View
                 style={[
-                  styles.phaseIndicator,
-                  currentPhase === "prep" && styles.activePhaseIndicator,
+                  styles.progressFill,
+                  {
+                    width: `${(timeElapsed / totalDuration) * 100}%`,
+                  },
                 ]}
-              >
-                <Text style={styles.phaseIndicatorText}>PREP</Text>
+              />
+            </View>
+          </View>
+        )}
+
+        {/* Pattern Selection (when not running) */}
+        {!isRunning && (
+          <View style={styles.patternSection}>
+            <ThemedText style={styles.sectionLabel}>Haptic Pattern</ThemedText>
+            <View style={styles.patternButtons}>
+              {(["standard", "gentle-wave", "soft-pulse"] as HapticPattern[]).map(
+                (pattern) => (
+                  <Pressable
+                    key={pattern}
+                    style={[
+                      styles.patternButton,
+                      selectedPattern === pattern && styles.patternButtonActive,
+                    ]}
+                    onPress={() => setSelectedPattern(pattern)}
+                  >
+                    <Feather
+                      name={
+                        pattern === "standard"
+                          ? "activity"
+                          : pattern === "gentle-wave"
+                            ? "wind"
+                            : "heart"
+                      }
+                      size={18}
+                      color={
+                        selectedPattern === pattern
+                          ? "#FFFFFF"
+                          : Colors.light.text
+                      }
+                    />
+                    <ThemedText
+                      style={[
+                        styles.patternButtonText,
+                        selectedPattern === pattern &&
+                          styles.patternButtonTextActive,
+                      ]}
+                    >
+                      {pattern === "standard"
+                        ? "Standard"
+                        : pattern === "gentle-wave"
+                          ? "Gentle"
+                          : "Pulse"}
+                    </ThemedText>
+                  </Pressable>
+                )
+              )}
+            </View>
+
+            {/* Session Info */}
+            <View style={styles.sessionInfo}>
+              <View style={styles.infoRow}>
+                <Feather name="clock" size={16} color={Colors.light.textSecondary} />
+                <ThemedText style={styles.infoText}>
+                  {phases.settle}s settle → {phases.peak}s peak → {phases.cool}s cool
+                </ThemedText>
               </View>
-              <View
-                style={[
-                  styles.phaseIndicator,
-                  currentPhase === "active" && styles.activePhaseIndicator,
-                ]}
-              >
-                <Text style={styles.phaseIndicatorText}>ACTIVE</Text>
-              </View>
-              <View
-                style={[
-                  styles.phaseIndicator,
-                  currentPhase === "cool" && styles.activePhaseIndicator,
-                ]}
-              >
-                <Text style={styles.phaseIndicatorText}>COOL</Text>
+              <View style={styles.infoRow}>
+                <Feather name="sliders" size={16} color={Colors.light.textSecondary} />
+                <ThemedText style={styles.infoText}>
+                  Intensity: {Math.round(effectiveIntensity * 100)}%
+                </ThemedText>
               </View>
             </View>
-          )}
-        </View>
-      </View>
+          </View>
+        )}
+      </ScrollView>
 
-      <View style={styles.bottomContainer}>
+      {/* Bottom Controls */}
+      <View style={[styles.bottomContainer, { paddingBottom: insets.bottom + Spacing.lg }]}>
         {!isRunning ? (
-          <TouchableOpacity style={styles.startButton} onPress={startSession}>
-            <Feather name="play" size={24} color="white" />
-            <Text style={styles.startButtonText}>
-              Start {sessionDuration}s Session
-            </Text>
-          </TouchableOpacity>
+          <Pressable
+            style={({ pressed }) => [
+              styles.startButton,
+              pressed && styles.buttonPressed,
+            ]}
+            onPress={startSession}
+          >
+            <Feather name="play" size={28} color="#FFFFFF" />
+            <ThemedText style={styles.startButtonText}>
+              Start Session
+            </ThemedText>
+          </Pressable>
         ) : (
-          <TouchableOpacity style={styles.stopButton} onPress={handleStop}>
-            <Feather name="square" size={24} color="white" />
-            <Text style={styles.stopButtonText}>Stop Session</Text>
-          </TouchableOpacity>
+          <Pressable
+            style={({ pressed }) => [
+              styles.stopButton,
+              pressed && styles.buttonPressed,
+            ]}
+            onPress={handleCancelSession}
+          >
+            <Feather name="square" size={24} color="#FFFFFF" />
+            <ThemedText style={styles.stopButtonText}>Stop</ThemedText>
+          </Pressable>
         )}
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F8F9FA",
+    backgroundColor: Colors.light.background,
   },
-  backgroundOverlay: {
+  dragonfly: {
     position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    zIndex: 10,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 10,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "white",
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.light.card,
     justifyContent: "center",
     alignItems: "center",
     shadowColor: "#000",
@@ -551,140 +623,156 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     flex: 1,
-    fontSize: 18,
+    fontSize: Typography.sizes.lg,
     fontWeight: "600",
-    color: "#2C3E50",
+    color: Colors.light.text,
     textAlign: "center",
   },
   headerSpacer: {
-    width: 40,
+    width: 44,
   },
   content: {
-    flex: 1,
+    flexGrow: 1,
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 20,
-  },
-  timerContainer: {
-    alignItems: "center",
-    marginBottom: 40,
-  },
-  timerText: {
-    fontSize: 72,
-    fontWeight: "bold",
-    color: "#2C3E50",
-    textAlign: "center",
-  },
-  phaseText: {
-    fontSize: 16,
-    fontWeight: "500",
-    color: "#7F8C8D",
-    letterSpacing: 2,
-    marginTop: 8,
-    textAlign: "center",
-  },
-  phaseTimer: {
-    fontSize: 12,
-    letterSpacing: 1,
-  },
-  dragonflyContainer: {
-    position: "absolute",
-    zIndex: 10,
-  },
-  dragonflyEmoji: {
-    fontSize: 40,
-  },
-  statusContainer: {
-    alignItems: "center",
-    marginTop: 40,
-  },
-  statusText: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#34495E",
-    marginBottom: 16,
-    textAlign: "center",
-  },
-  phaseProgressContainer: {
-    width: 240,
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  phaseProgressBar: {
-    width: "100%",
-    height: 8,
-    backgroundColor: "#ECF0F1",
-    borderRadius: 4,
-    overflow: "hidden",
-    marginBottom: 8,
-  },
-  phaseProgress: {
-    height: "100%",
-    borderRadius: 4,
-  },
-  progressText: {
-    fontSize: 12,
-    color: "#7F8C8D",
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.lg,
   },
   phaseIndicators: {
+    width: "100%",
+    maxWidth: 300,
+    marginTop: Spacing.xl,
+  },
+  phaseRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    width: 200,
+    marginBottom: Spacing.md,
   },
   phaseIndicator: {
-    paddingVertical: 4,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    backgroundColor: "#ECF0F1",
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.light.border,
   },
-  activePhaseIndicator: {
-    backgroundColor: "#3498DB",
+  phaseIndicatorActive: {
+    backgroundColor: Colors.light.primary,
   },
   phaseIndicatorText: {
-    fontSize: 10,
+    fontSize: Typography.sizes.xs,
     fontWeight: "600",
-    color: "#7F8C8D",
+    color: Colors.light.textSecondary,
+  },
+  phaseIndicatorTextActive: {
+    color: "#FFFFFF",
+  },
+  progressBar: {
+    height: 6,
+    backgroundColor: Colors.light.border,
+    borderRadius: BorderRadius.full,
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    backgroundColor: Colors.light.primary,
+    borderRadius: BorderRadius.full,
+  },
+  patternSection: {
+    width: "100%",
+    maxWidth: 340,
+    marginTop: Spacing["2xl"],
+  },
+  sectionLabel: {
+    fontSize: Typography.sizes.sm,
+    fontWeight: "600",
+    color: Colors.light.textSecondary,
+    marginBottom: Spacing.md,
+    textAlign: "center",
+  },
+  patternButtons: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: Spacing.sm,
+  },
+  patternButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.full,
+    backgroundColor: Colors.light.card,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+  },
+  patternButtonActive: {
+    backgroundColor: Colors.light.primary,
+    borderColor: Colors.light.primary,
+  },
+  patternButtonText: {
+    fontSize: Typography.sizes.sm,
+    fontWeight: "500",
+    color: Colors.light.text,
+  },
+  patternButtonTextActive: {
+    color: "#FFFFFF",
+  },
+  sessionInfo: {
+    marginTop: Spacing.xl,
+    padding: Spacing.md,
+    backgroundColor: Colors.light.card,
+    borderRadius: BorderRadius.md,
+    gap: Spacing.sm,
+  },
+  infoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+  },
+  infoText: {
+    fontSize: Typography.sizes.sm,
+    color: Colors.light.textSecondary,
   },
   bottomContainer: {
-    padding: 20,
-    paddingBottom: 40,
+    paddingHorizontal: Spacing.xl,
+    paddingTop: Spacing.lg,
   },
   startButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#2ECC71",
-    borderRadius: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 32,
+    borderRadius: BorderRadius.lg,
+    paddingVertical: Spacing.lg,
+    paddingHorizontal: Spacing["2xl"],
+    gap: Spacing.md,
     shadowColor: "#2ECC71",
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 6,
   },
   startButtonText: {
-    fontSize: 18,
+    fontSize: Typography.sizes.lg,
     fontWeight: "600",
-    color: "white",
-    marginLeft: 8,
+    color: "#FFFFFF",
   },
   stopButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#E74C3C",
-    borderRadius: 12,
-    paddingVertical: 16,
-    paddingHorizontal: 32,
+    borderRadius: BorderRadius.lg,
+    paddingVertical: Spacing.lg,
+    paddingHorizontal: Spacing["2xl"],
+    gap: Spacing.md,
   },
   stopButtonText: {
-    fontSize: 18,
+    fontSize: Typography.sizes.lg,
     fontWeight: "600",
-    color: "white",
-    marginLeft: 8,
+    color: "#FFFFFF",
+  },
+  buttonPressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.98 }],
   },
 });

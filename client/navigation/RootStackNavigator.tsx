@@ -16,8 +16,8 @@ import type { HapticPattern, SessionSite, SessionDuration } from "@/types";
 export type RootStackParamList = {
   Onboarding: undefined;
   Main: undefined;
-  Session: { site?: SessionSite; duration?: SessionDuration };
-  ComfortRating: { duration: number; hapticPattern: HapticPattern; site?: SessionSite };
+  Session: { site?: SessionSite; duration?: SessionDuration; sensoryProfile?: string; textureVariation?: string };
+  ComfortRating: { sessionId?: string; duration?: number; hapticPattern?: HapticPattern; site?: SessionSite };
   DisclaimerModal: undefined;
   About: undefined;
   DiscoveryWizard: { site?: SessionSite };

@@ -1,5 +1,11 @@
 export type HapticPattern = 'standard' | 'gentle-wave' | 'soft-pulse';
 
+export type SensoryProfile = 'edge' | 'buffer' | 'deepwave' | 'rhythmiclayers';
+
+export type TextureVariation = 'constantflow' | 'rhythmicwaves' | 'adaptiveflow';
+
+export type TestProfile = 'test_gate_control' | 'test_massage_simulation';
+
 export type ComfortRating = 1 | 2 | 3 | 4 | 5;
 
 export type SessionSite = 

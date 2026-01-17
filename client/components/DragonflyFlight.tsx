@@ -10,6 +10,7 @@ const SPRITES: Record<Variant, Partial<Record<Pose, any>>> = {
     hover: require("../../assets/images/dragonfly-blue-hover.png"),
     glide: require("../../assets/images/dragonfly-blue-glide.png"),
     dart: require("../../assets/images/dragonfly-blue-dart.png"),
+    fly_up: require("../../assets/images/dragonfly-blue-fly_up.png"),
     fly_down: require("../../assets/images/dragonfly-blue-fly_down.png"),
     top_down: require("../../assets/images/dragonfly-blue-top_down.png"),
   },
