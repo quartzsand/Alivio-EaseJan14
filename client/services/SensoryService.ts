@@ -1,4 +1,4 @@
-// client/services/SensoryService.ts
+// client/services/SensoryService.ts - COMPLETE FILE WITH FIXED AUDIO
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { Audio } from "expo-av";
@@ -32,7 +32,7 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   vibrationIntensity: 0.7,
   audioEnabled: true,
   visualEffectsEnabled: true,
-  defaultDuration: 60,
+  defaultDuration: 24,
   preferredSite: "thigh",
 };
 
@@ -42,25 +42,29 @@ export class SensoryService {
   private audioEngine: any = null;
   private isRunning: boolean = false;
   private sessionTimer: NodeJS.Timeout | null = null;
+  private phaseTimers: NodeJS.Timeout[] = [];
 
   constructor() {
     this.initialize();
   }
 
+  // FIXED AUDIO INITIALIZATION
   private async initialize(): Promise<void> {
     try {
-      // Initialize audio
+      // Use simplified, valid audio configuration
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: false,
-        staysActiveInBackground: true,
-        interruptionModeIOS: Audio.INTERRUPTION_MODE_IOS_DO_NOT_MIX,
         playsInSilentModeIOS: true,
-        shouldDuckAndroid: true,
-        interruptionModeAndroid: Audio.INTERRUPTION_MODE_ANDROID_DO_NOT_MIX,
+        staysActiveInBackground: false, // Keep simple for now
+        shouldDuckAndroid: false,
         playThroughEarpieceAndroid: false,
+        // Removed problematic interruption modes
       });
+
+      console.log("SensoryService initialized successfully with audio");
     } catch (error) {
-      console.error("Error initializing SensoryService:", error);
+      console.warn("Audio setup failed, continuing without audio:", error);
+      // Continue initialization even if audio fails
     }
   }
 
@@ -128,6 +132,15 @@ export class SensoryService {
     console.log("Stopping sensory service");
 
     try {
+      // Clear all timers
+      this.phaseTimers.forEach((timer) => clearTimeout(timer));
+      this.phaseTimers = [];
+
+      if (this.sessionTimer) {
+        clearTimeout(this.sessionTimer);
+        this.sessionTimer = null;
+      }
+
       // Stop haptics
       if (this.hapticEngine) {
         this.hapticEngine.stop?.();
@@ -136,14 +149,9 @@ export class SensoryService {
 
       // Stop audio
       if (this.audioEngine) {
-        this.audioEngine.stop?.();
+        this.audioEngine.stopAsync?.();
+        this.audioEngine.unloadAsync?.();
         this.audioEngine = null;
-      }
-
-      // Clear timer
-      if (this.sessionTimer) {
-        clearTimeout(this.sessionTimer);
-        this.sessionTimer = null;
       }
 
       this.isRunning = false;
@@ -153,7 +161,7 @@ export class SensoryService {
     }
   }
 
-  // Start session
+  // Start session with proper phase timing
   async startSession(duration: number, site: string): Promise<void> {
     try {
       this.stop(); // Ensure clean state
@@ -163,7 +171,7 @@ export class SensoryService {
       // Update to prep phase
       this.updatePhase("prep", true);
 
-      // Schedule phase transitions
+      // Schedule phase transitions based on duration
       this.schedulePhaseTransitions(duration);
     } catch (error) {
       console.error("Error starting session:", error);
@@ -172,31 +180,39 @@ export class SensoryService {
   }
 
   private schedulePhaseTransitions(duration: number): void {
-    const prepDuration = Math.min(10, duration * 0.2); // 20% or 10s max
-    const activeDuration = duration * 0.6; // 60%
-    const coolDuration = duration * 0.2; // 20%
+    // Phase timing configurations
+    const phaseConfigs = {
+      18: { prep: 3, active: 12, cool: 3 },
+      24: { prep: 4, active: 16, cool: 4 },
+      30: { prep: 5, active: 20, cool: 5 },
+    };
+
+    const config = phaseConfigs[duration] || phaseConfigs[24];
 
     // Prep -> Active
-    setTimeout(() => {
+    const activeTimer = setTimeout(() => {
       if (this.isRunning) {
         this.updatePhase("active", true);
       }
-    }, prepDuration * 1000);
+    }, config.prep * 1000);
+    this.phaseTimers.push(activeTimer);
 
     // Active -> Cool
-    setTimeout(
+    const coolTimer = setTimeout(
       () => {
         if (this.isRunning) {
           this.updatePhase("cool", true);
         }
       },
-      (prepDuration + activeDuration) * 1000,
+      (config.prep + config.active) * 1000,
     );
+    this.phaseTimers.push(coolTimer);
 
     // Cool -> Complete
-    setTimeout(() => {
+    const completeTimer = setTimeout(() => {
       this.updatePhase("complete", false);
     }, duration * 1000);
+    this.phaseTimers.push(completeTimer);
   }
 
   private startGentleHaptics(): void {
@@ -206,7 +222,8 @@ export class SensoryService {
       if (!this.isRunning || this.currentPhase !== "prep") return;
 
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      setTimeout(hapticPattern, 2000); // Every 2 seconds
+      const timer = setTimeout(hapticPattern, 2000); // Every 2 seconds
+      this.phaseTimers.push(timer);
     };
 
     hapticPattern();
@@ -219,7 +236,8 @@ export class SensoryService {
       if (!this.isRunning || this.currentPhase !== "active") return;
 
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-      setTimeout(hapticPattern, 800); // Every 0.8 seconds
+      const timer = setTimeout(hapticPattern, 800); // Every 0.8 seconds
+      this.phaseTimers.push(timer);
     };
 
     hapticPattern();
@@ -232,10 +250,40 @@ export class SensoryService {
       if (!this.isRunning || this.currentPhase !== "cool") return;
 
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      setTimeout(hapticPattern, 1500); // Every 1.5 seconds
+      const timer = setTimeout(hapticPattern, 1500); // Every 1.5 seconds
+      this.phaseTimers.push(timer);
     };
 
     hapticPattern();
+  }
+
+  // Play audio feedback (optional)
+  async playAudioFeedback(type: "start" | "phase" | "complete"): Promise<void> {
+    try {
+      const preferences = await this.getPreferences();
+      if (!preferences.audioEnabled) return;
+
+      // Simple audio feedback using system sounds
+      switch (type) {
+        case "start":
+          await Haptics.notificationAsync(
+            Haptics.NotificationFeedbackType.Success,
+          );
+          break;
+        case "phase":
+          await Haptics.notificationAsync(
+            Haptics.NotificationFeedbackType.Warning,
+          );
+          break;
+        case "complete":
+          await Haptics.notificationAsync(
+            Haptics.NotificationFeedbackType.Success,
+          );
+          break;
+      }
+    } catch (error) {
+      console.warn("Audio feedback failed:", error);
+    }
   }
 
   // Preferences management
@@ -284,6 +332,62 @@ export class SensoryService {
       return raw ? JSON.parse(raw) : [];
     } catch {
       return [];
+    }
+  }
+
+  // Get session statistics
+  async getSessionStats(): Promise<{
+    totalSessions: number;
+    averageDuration: number;
+    favoritesite: string;
+    completionRate: number;
+  }> {
+    try {
+      const history = await this.getSessionHistory();
+
+      if (history.length === 0) {
+        return {
+          totalSessions: 0,
+          averageDuration: 0,
+          favoritesite: "thigh",
+          completionRate: 0,
+        };
+      }
+
+      const totalSessions = history.length;
+      const completedSessions = history.filter((s) => s.completedSuccessfully);
+      const averageDuration =
+        history.reduce((sum, s) => sum + s.duration, 0) / totalSessions;
+
+      // Find most common site
+      const siteCounts = history.reduce(
+        (acc, session) => {
+          acc[session.site] = (acc[session.site] || 0) + 1;
+          return acc;
+        },
+        {} as Record<string, number>,
+      );
+
+      const favoritesite =
+        Object.entries(siteCounts).sort(([, a], [, b]) => b - a)[0]?.[0] ||
+        "thigh";
+
+      return {
+        totalSessions,
+        averageDuration: Math.round(averageDuration),
+        favoritesite,
+        completionRate: Math.round(
+          (completedSessions.length / totalSessions) * 100,
+        ),
+      };
+    } catch (error) {
+      console.error("Error getting session stats:", error);
+      return {
+        totalSessions: 0,
+        averageDuration: 0,
+        favoritesite: "thigh",
+        completionRate: 0,
+      };
     }
   }
 

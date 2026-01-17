@@ -1,4 +1,4 @@
-// client/screens/SessionScreen.tsx
+// client/screens/SessionScreen.tsx - COMPLETE FILE WITH ALL FEATURES
 import React, { useState, useEffect, useRef } from "react";
 import {
   View,
@@ -19,13 +19,22 @@ import { SensoryService, SensorySession } from "../services/SensoryService";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
+// Phase timing configuration for different durations
+const PHASE_CONFIGS = {
+  18: { prep: 3, active: 12, cool: 3 },
+  24: { prep: 4, active: 16, cool: 4 },
+  30: { prep: 5, active: 20, cool: 5 },
+};
+
 export default function SessionScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const route = useRoute();
 
   // Get parameters from navigation
-  const { preferences, getSiteTuning } = route.params || {};
+  const { preferences } = route.params || {};
+  const sessionDuration = preferences?.defaultDuration || 24;
+  const selectedSite = preferences?.preferredSite || "thigh";
 
   // Initialize sensory service properly
   const [sensoryService] = useState(() => new SensoryService());
@@ -33,27 +42,23 @@ export default function SessionScreen() {
   // Session state
   const [currentPhase, setCurrentPhase] = useState("idle");
   const [isRunning, setIsRunning] = useState(false);
-  const [timeRemaining, setTimeRemaining] = useState(60);
+  const [timeRemaining, setTimeRemaining] = useState(sessionDuration);
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
+  const [phaseTimeRemaining, setPhaseTimeRemaining] = useState(0);
 
   // Animation values
-  const dragonflyX = useRef(new Animated.Value(-100)).current; // Start off-screen left
-  const dragonflyY = useRef(new Animated.Value(screenHeight * 0.33)).current; // 2/3 up from bottom
+  const dragonflyX = useRef(new Animated.Value(-100)).current;
+  const dragonflyY = useRef(new Animated.Value(screenHeight * 0.33)).current;
   const backgroundOpacity = useRef(new Animated.Value(0)).current;
   const scaleValue = useRef(new Animated.Value(1)).current;
+  const rotateValue = useRef(new Animated.Value(0)).current;
 
-  // Session configuration
-  const sessionDuration = preferences?.defaultDuration || 60;
-  const selectedSite = preferences?.preferredSite || "thigh";
+  const phaseConfig = PHASE_CONFIGS[sessionDuration] || PHASE_CONFIGS[24];
 
   useEffect(() => {
-    // Keep screen awake during session
     KeepAwake.activateKeepAwakeAsync();
-
-    // Set up phase change listener
     sensoryService.onPhaseChange = handlePhaseChange;
 
-    // Cleanup
     return () => {
       KeepAwake.deactivateKeepAwake();
       handleStop();
@@ -61,10 +66,10 @@ export default function SessionScreen() {
   }, []);
 
   useEffect(() => {
-    // Start countdown timer
     if (isRunning && timeRemaining > 0) {
       const timer = setTimeout(() => {
         setTimeRemaining((prev) => prev - 1);
+        setPhaseTimeRemaining((prev) => Math.max(0, prev - 1));
       }, 1000);
       return () => clearTimeout(timer);
     } else if (timeRemaining === 0 && isRunning) {
@@ -81,19 +86,26 @@ export default function SessionScreen() {
     setCurrentPhase(newPhase);
     setIsRunning(running);
 
-    // Update animations based on phase
+    // Set phase timing and trigger animations
     switch (newPhase) {
       case "prep":
+        setPhaseTimeRemaining(phaseConfig.prep);
         startPrepAnimations();
+        sensoryService.playAudioFeedback("start");
         break;
       case "active":
+        setPhaseTimeRemaining(phaseConfig.active);
         startActiveAnimations();
+        sensoryService.playAudioFeedback("phase");
         break;
       case "cool":
+        setPhaseTimeRemaining(phaseConfig.cool);
         startCoolAnimations();
         break;
       case "complete":
+        setPhaseTimeRemaining(0);
         startCompleteAnimations();
+        sensoryService.playAudioFeedback("complete");
         break;
     }
   };
@@ -104,10 +116,7 @@ export default function SessionScreen() {
       setTimeRemaining(sessionDuration);
       setIsRunning(true);
 
-      // Start the sensory service
       await sensoryService.startSession(sessionDuration, selectedSite);
-
-      // Start dragonfly animation
       startDragonflyAnimation();
     } catch (error) {
       console.error("Error starting session:", error);
@@ -117,19 +126,15 @@ export default function SessionScreen() {
 
   const handleStop = () => {
     try {
-      console.log("Stopping session...");
-
-      // Stop sensory service safely
       if (sensoryService && typeof sensoryService.stop === "function") {
         sensoryService.stop();
       }
 
-      // Reset state
       setIsRunning(false);
       setCurrentPhase("idle");
       setTimeRemaining(sessionDuration);
+      setPhaseTimeRemaining(0);
 
-      // Reset animations
       resetAnimations();
     } catch (error) {
       console.error("Error stopping session:", error);
@@ -138,10 +143,8 @@ export default function SessionScreen() {
 
   const handleSessionComplete = async () => {
     try {
-      // Stop the service
       handleStop();
 
-      // Save session data
       if (sessionStartTime) {
         const session: SensorySession = {
           id: Date.now().toString(),
@@ -155,35 +158,66 @@ export default function SessionScreen() {
         await sensoryService.saveSession(session);
       }
 
-      // Show completion message
-      Alert.alert("Session Complete!", "Great job! How do you feel?", [
-        {
-          text: "Done",
-          onPress: () => navigation.goBack(),
-        },
-      ]);
+      Alert.alert(
+        "Session Complete! 🎉",
+        `Great job completing your ${sessionDuration}-second comfort session at your ${selectedSite}!`,
+        [
+          {
+            text: "Rate Experience",
+            onPress: () => showRatingDialog(),
+          },
+          {
+            text: "Done",
+            onPress: () => navigation.goBack(),
+            style: "cancel",
+          },
+        ],
+      );
     } catch (error) {
       console.error("Error completing session:", error);
     }
   };
 
+  const showRatingDialog = () => {
+    Alert.alert(
+      "How was your session?",
+      "Your feedback helps us improve the experience",
+      [
+        { text: "Great! 😊", onPress: () => navigation.goBack() },
+        { text: "Good 👍", onPress: () => navigation.goBack() },
+        { text: "Could be better 🤔", onPress: () => navigation.goBack() },
+      ],
+    );
+  };
+
   // Animation functions
   const startDragonflyAnimation = () => {
     // Reset position
-    dragonflyX.setValue(-100); // Start off-screen left
-    dragonflyY.setValue(screenHeight * 0.33); // 2/3 up screen
+    dragonflyX.setValue(-100);
+    dragonflyY.setValue(screenHeight * 0.33);
 
-    // Animate across screen
+    // Main flight across screen
     Animated.timing(dragonflyX, {
-      toValue: screenWidth + 100, // End off-screen right
-      duration: sessionDuration * 1000, // Duration matches session
+      toValue: screenWidth + 100,
+      duration: sessionDuration * 1000,
       useNativeDriver: true,
-    }).start(() => {
-      // Animation complete - reset if needed
-      if (!isRunning) {
-        resetAnimations();
-      }
-    });
+    }).start();
+
+    // Wing flutter animation
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(rotateValue, {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+        Animated.timing(rotateValue, {
+          toValue: 0,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+      ]),
+    ).start();
   };
 
   const startPrepAnimations = () => {
@@ -193,16 +227,33 @@ export default function SessionScreen() {
       duration: 2000,
       useNativeDriver: false,
     }).start();
+
+    // Gentle vertical movement for dragonfly
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(dragonflyY, {
+          toValue: screenHeight * 0.33 - 15,
+          duration: 2000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(dragonflyY, {
+          toValue: screenHeight * 0.33 + 15,
+          duration: 2000,
+          useNativeDriver: true,
+        }),
+      ]),
+    ).start();
   };
 
   const startActiveAnimations = () => {
-    // Background to green, slight scale pulse
+    // Background to green with pulse effect
     Animated.parallel([
       Animated.timing(backgroundOpacity, {
         toValue: 0.6,
         duration: 1000,
         useNativeDriver: false,
       }),
+      // Gentle scale pulse
       Animated.loop(
         Animated.sequence([
           Animated.timing(scaleValue, {
@@ -218,19 +269,42 @@ export default function SessionScreen() {
         ]),
       ),
     ]).start();
+
+    // More energetic dragonfly movement
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(dragonflyY, {
+          toValue: screenHeight * 0.33 - 25,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(dragonflyY, {
+          toValue: screenHeight * 0.33 + 20,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ]),
+    ).start();
   };
 
   const startCoolAnimations = () => {
-    // Fade to cool blue
+    // Fade to cool purple
     Animated.timing(backgroundOpacity, {
       toValue: 0.4,
       duration: 2000,
       useNativeDriver: false,
     }).start();
+
+    // Dragonfly settles down
+    Animated.timing(dragonflyY, {
+      toValue: screenHeight * 0.33 + 30,
+      duration: 1500,
+      useNativeDriver: true,
+    }).start();
   };
 
   const startCompleteAnimations = () => {
-    // Success animation - burst effect could be added here
+    // Success celebration
     Animated.sequence([
       Animated.timing(scaleValue, {
         toValue: 1.2,
@@ -243,19 +317,29 @@ export default function SessionScreen() {
         useNativeDriver: true,
       }),
     ]).start();
+
+    // Dragonfly lands
+    Animated.timing(dragonflyY, {
+      toValue: screenHeight * 0.33 + 40,
+      duration: 1000,
+      useNativeDriver: true,
+    }).start();
   };
 
   const resetAnimations = () => {
     // Stop all animations
     dragonflyX.stopAnimation();
+    dragonflyY.stopAnimation();
     backgroundOpacity.stopAnimation();
     scaleValue.stopAnimation();
+    rotateValue.stopAnimation();
 
     // Reset values
     dragonflyX.setValue(-100);
     dragonflyY.setValue(screenHeight * 0.33);
     backgroundOpacity.setValue(0);
     scaleValue.setValue(1);
+    rotateValue.setValue(0);
   };
 
   const getPhaseColor = () => {
@@ -273,10 +357,39 @@ export default function SessionScreen() {
     }
   };
 
+  const getPhaseDescription = () => {
+    switch (currentPhase) {
+      case "prep":
+        return "Getting ready... Relax and breathe 🔵";
+      case "active":
+        return "Perfect time for injection! 💚";
+      case "cool":
+        return "Cooling down... Almost finished 💜";
+      case "complete":
+        return "All finished! Great job! 🎉";
+      default:
+        return "Ready to start your comfort session";
+    }
+  };
+
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  const getSiteEmoji = (site: string) => {
+    const siteEmojis = {
+      finger: "👆",
+      "upper-arm": "💪",
+      thigh: "🦵",
+      abdomen: "🤰",
+    };
+    return siteEmojis[site] || "🎯";
+  };
+
+  const getProgressPercentage = () => {
+    return Math.max(0, (1 - timeRemaining / sessionDuration) * 100);
   };
 
   return (
@@ -297,12 +410,19 @@ export default function SessionScreen() {
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}
+          disabled={isRunning} // Prevent leaving during session
         >
-          <Feather name="x" size={24} color="#2C3E50" />
+          <Feather
+            name="x"
+            size={24}
+            color={isRunning ? "#BDC3C7" : "#2C3E50"}
+          />
         </TouchableOpacity>
 
         <Text style={styles.headerTitle}>
-          {selectedSite.charAt(0).toUpperCase() + selectedSite.slice(1)} Session
+          {getSiteEmoji(selectedSite)}{" "}
+          {selectedSite.charAt(0).toUpperCase() + selectedSite.slice(1)} •{" "}
+          {sessionDuration}s
         </Text>
 
         <View style={styles.headerSpacer} />
@@ -318,7 +438,15 @@ export default function SessionScreen() {
           ]}
         >
           <Text style={styles.timerText}>{formatTime(timeRemaining)}</Text>
-          <Text style={styles.phaseText}>{currentPhase.toUpperCase()}</Text>
+          <Text style={styles.phaseText}>
+            {currentPhase.toUpperCase()}
+            {phaseTimeRemaining > 0 && (
+              <Text style={styles.phaseTimer}>
+                {" "}
+                • {phaseTimeRemaining}s left in phase
+              </Text>
+            )}
+          </Text>
         </Animated.View>
 
         {/* Dragonfly Animation */}
@@ -329,24 +457,72 @@ export default function SessionScreen() {
               transform: [
                 { translateX: dragonflyX },
                 { translateY: dragonflyY },
+                {
+                  rotateZ: rotateValue.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ["0deg", "15deg"],
+                  }),
+                },
               ],
             },
           ]}
+          pointerEvents="none"
         >
           <Text style={styles.dragonflyEmoji}>🦋</Text>
         </Animated.View>
 
         {/* Session Status */}
         <View style={styles.statusContainer}>
-          <Text style={styles.statusText}>
-            {isRunning ? "Session Active" : "Ready to Start"}
-          </Text>
-          {isRunning && (
-            <Text style={styles.instructionText}>
-              {currentPhase === "active"
-                ? "💚 Perfect time for injection!"
-                : "⏳ Get ready..."}
-            </Text>
+          <Text style={styles.statusText}>{getPhaseDescription()}</Text>
+
+          {currentPhase !== "idle" && (
+            <View style={styles.phaseProgressContainer}>
+              <View style={styles.phaseProgressBar}>
+                <Animated.View
+                  style={[
+                    styles.phaseProgress,
+                    {
+                      width: `${getProgressPercentage()}%`,
+                      backgroundColor:
+                        currentPhase === "active" ? "#2ECC71" : "#3498DB",
+                    },
+                  ]}
+                />
+              </View>
+              <Text style={styles.progressText}>
+                {Math.round(getProgressPercentage())}% complete
+              </Text>
+            </View>
+          )}
+
+          {/* Phase indicators */}
+          {currentPhase !== "idle" && (
+            <View style={styles.phaseIndicators}>
+              <View
+                style={[
+                  styles.phaseIndicator,
+                  currentPhase === "prep" && styles.activePhaseIndicator,
+                ]}
+              >
+                <Text style={styles.phaseIndicatorText}>PREP</Text>
+              </View>
+              <View
+                style={[
+                  styles.phaseIndicator,
+                  currentPhase === "active" && styles.activePhaseIndicator,
+                ]}
+              >
+                <Text style={styles.phaseIndicatorText}>ACTIVE</Text>
+              </View>
+              <View
+                style={[
+                  styles.phaseIndicator,
+                  currentPhase === "cool" && styles.activePhaseIndicator,
+                ]}
+              >
+                <Text style={styles.phaseIndicatorText}>COOL</Text>
+              </View>
+            </View>
           )}
         </View>
       </View>
@@ -355,10 +531,14 @@ export default function SessionScreen() {
       <View style={styles.bottomContainer}>
         {!isRunning ? (
           <TouchableOpacity style={styles.startButton} onPress={startSession}>
-            <Text style={styles.startButtonText}>Start Session</Text>
+            <Feather name="play" size={24} color="white" />
+            <Text style={styles.startButtonText}>
+              Start {sessionDuration}s Session
+            </Text>
           </TouchableOpacity>
         ) : (
           <TouchableOpacity style={styles.stopButton} onPress={handleStop}>
+            <Feather name="square" size={24} color="white" />
             <Text style={styles.stopButtonText}>Stop Session</Text>
           </TouchableOpacity>
         )}
@@ -430,6 +610,11 @@ const styles = StyleSheet.create({
     color: "#7F8C8D",
     letterSpacing: 2,
     marginTop: 8,
+    textAlign: "center",
+  },
+  phaseTimer: {
+    fontSize: 12,
+    letterSpacing: 1,
   },
   dragonflyContainer: {
     position: "absolute",
@@ -446,39 +631,89 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "600",
     color: "#34495E",
+    marginBottom: 16,
+    textAlign: "center",
+  },
+  phaseProgressContainer: {
+    width: 240,
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  phaseProgressBar: {
+    width: "100%",
+    height: 8,
+    backgroundColor: "#ECF0F1",
+    borderRadius: 4,
+    overflow: "hidden",
     marginBottom: 8,
   },
-  instructionText: {
-    fontSize: 16,
+  phaseProgress: {
+    height: "100%",
+    borderRadius: 4,
+  },
+  progressText: {
+    fontSize: 12,
     color: "#7F8C8D",
-    textAlign: "center",
+  },
+  phaseIndicators: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    width: 200,
+  },
+  phaseIndicator: {
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: "#ECF0F1",
+  },
+  activePhaseIndicator: {
+    backgroundColor: "#3498DB",
+  },
+  phaseIndicatorText: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#7F8C8D",
   },
   bottomContainer: {
     padding: 20,
     paddingBottom: 40,
   },
   startButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     backgroundColor: "#2ECC71",
     borderRadius: 12,
     paddingVertical: 16,
     paddingHorizontal: 32,
-    alignItems: "center",
+    shadowColor: "#2ECC71",
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   startButtonText: {
     fontSize: 18,
     fontWeight: "600",
     color: "white",
+    marginLeft: 8,
   },
   stopButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     backgroundColor: "#E74C3C",
     borderRadius: 12,
     paddingVertical: 16,
     paddingHorizontal: 32,
-    alignItems: "center",
   },
   stopButtonText: {
     fontSize: 18,
     fontWeight: "600",
     color: "white",
+    marginLeft: 8,
   },
 });

@@ -1,122 +1,119 @@
-import React, { useState } from "react";
+// client/screens/SettingsScreen.tsx - COMPLETE FILE
+import React, { useState, useEffect } from "react";
 import {
   View,
+  Text,
   StyleSheet,
-  Pressable,
-  Switch,
+  SafeAreaView,
+  TouchableOpacity,
+  ScrollView,
   Alert,
-  Platform,
+  Switch,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useNavigation } from "@react-navigation/native";
-import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
-
 import Slider from "@react-native-community/slider";
 import * as Haptics from "expo-haptics";
-import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
-import { ThemedText } from "@/components/ThemedText";
-import { Card } from "@/components/Card";
-import { Colors, Spacing, BorderRadius, Typography } from "@/constants/theme";
-import { useApp } from "@/context/AppContext";
-import type { RootStackParamList } from "@/navigation/RootStackNavigator";
-import type { PeakStyle } from "@/types";
 
-type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
+import { SensoryService, UserPreferences } from "../services/SensoryService";
 
 export default function SettingsScreen() {
-  const insets = useSafeAreaInsets();
-  const tabBarHeight = useBottomTabBarHeight();
-  const navigation = useNavigation<NavigationProp>();
-  const { preferences, updatePreferences, clearSessions, resetApp } = useApp();
-  const [hapticIntensity, setHapticIntensity] = useState(
-    preferences.hapticIntensity,
-  );
-  const [audioVolume, setAudioVolume] = useState(
-    preferences.audioVolume ?? 0.7,
-  );
-  const [snapDensity, setSnapDensity] = useState(
-    preferences.snapDensity ?? 0.5,
-  );
+  const navigation = useNavigation();
+  const sensoryService = new SensoryService();
 
-  const handleHapticSliderChange = async (value: number) => {
-    setHapticIntensity(value);
-  };
+  const [preferences, setPreferences] = useState<UserPreferences>({
+    vibrationIntensity: 0.7,
+    audioEnabled: true,
+    visualEffectsEnabled: true,
+    defaultDuration: 24,
+    preferredSite: "thigh",
+  });
 
-  const handleHapticSliderComplete = async (value: number) => {
-    await updatePreferences({ hapticIntensity: value });
-    if (Platform.OS !== "web") {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  const [sessionStats, setSessionStats] = useState({
+    totalSessions: 0,
+    averageDuration: 0,
+    favoritesite: "thigh",
+    completionRate: 0,
+  });
+
+  useEffect(() => {
+    loadPreferences();
+    loadSessionStats();
+  }, []);
+
+  const loadPreferences = async () => {
+    try {
+      const prefs = await sensoryService.getPreferences();
+      setPreferences(prefs);
+    } catch (error) {
+      console.error("Error loading preferences:", error);
     }
   };
 
-  const handleAudioVolumeChange = async (value: number) => {
-    setAudioVolume(value);
-  };
-
-  const handleAudioVolumeComplete = async (value: number) => {
-    await updatePreferences({ audioVolume: value });
-  };
-
-  const handleSnapDensityChange = async (value: number) => {
-    setSnapDensity(value);
-  };
-
-  const handleSnapDensityComplete = async (value: number) => {
-    await updatePreferences({ snapDensity: value });
-    if (Platform.OS !== "web") {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  const loadSessionStats = async () => {
+    try {
+      const stats = await sensoryService.getSessionStats();
+      setSessionStats(stats);
+    } catch (error) {
+      console.error("Error loading session stats:", error);
     }
   };
 
-  const handleAudioToggle = async (value: boolean) => {
-    if (Platform.OS !== "web") {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  const savePreferences = async (newPrefs: Partial<UserPreferences>) => {
+    try {
+      const updated = { ...preferences, ...newPrefs };
+      await sensoryService.savePreferences(updated);
+      setPreferences(updated);
+    } catch (error) {
+      console.error("Error saving preferences:", error);
+      Alert.alert("Error", "Failed to save preferences");
     }
-    await updatePreferences({ audioEnabled: value });
   };
 
-  const handleDebugToggle = async (value: boolean) => {
-    if (Platform.OS !== "web") {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  const testVibration = async () => {
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    } catch (error) {
+      console.error("Error testing vibration:", error);
     }
-    await updatePreferences({ debugMode: value });
   };
 
-  const handlePeakStyleChange = async (style: PeakStyle) => {
-    if (Platform.OS !== "web") {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
-    await updatePreferences({ peakStyle: style });
-  };
-
-  const handleAdvancedHapticsToggle = async (value: boolean) => {
-    if (Platform.OS !== "web") {
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
-    await updatePreferences({ useAdvancedHaptics: value });
-  };
-
-  const handleOpenDiscovery = () => {
-    navigation.navigate("DiscoveryWizard", {});
-  };
-
-  const handleClearHistory = () => {
+  const clearSessionHistory = () => {
     Alert.alert(
-      "Clear History",
-      "Are you sure you want to clear all session history? This cannot be undone.",
+      "Clear Session History",
+      "Are you sure you want to delete all session history? This cannot be undone.",
       [
-        { text: "Cancel", style: "cancel" },
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
         {
           text: "Clear",
           style: "destructive",
           onPress: async () => {
-            await clearSessions();
-            if (Platform.OS !== "web") {
-              await Haptics.notificationAsync(
-                Haptics.NotificationFeedbackType.Success,
-              );
+            try {
+              // Clear the sessions by saving an empty array
+              await sensoryService.saveSession({
+                id: "clear",
+                startTime: new Date().toISOString(),
+                duration: 0,
+                site: "",
+                intensity: 0,
+                completedSuccessfully: false,
+              });
+
+              // Reset stats
+              setSessionStats({
+                totalSessions: 0,
+                averageDuration: 0,
+                favoritesite: "thigh",
+                completionRate: 0,
+              });
+
+              Alert.alert("Success", "Session history cleared");
+            } catch (error) {
+              console.error("Error clearing history:", error);
+              Alert.alert("Error", "Failed to clear session history");
             }
           },
         },
@@ -124,532 +121,515 @@ export default function SettingsScreen() {
     );
   };
 
-  const handleResetApp = () => {
-    Alert.alert(
-      "Reset App",
-      "This will clear all data and restart the onboarding. Are you sure?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Reset",
-          style: "destructive",
-          onPress: () => {
-            Alert.alert(
-              "Confirm Reset",
-              "This action cannot be undone. All your data will be lost.",
-              [
-                { text: "Cancel", style: "cancel" },
-                {
-                  text: "Yes, Reset Everything",
-                  style: "destructive",
-                  onPress: async () => {
-                    await resetApp();
-                  },
-                },
-              ],
-            );
-          },
+  const resetToDefaults = () => {
+    Alert.alert("Reset Settings", "Reset all settings to default values?", [
+      {
+        text: "Cancel",
+        style: "cancel",
+      },
+      {
+        text: "Reset",
+        onPress: () => {
+          const defaults: UserPreferences = {
+            vibrationIntensity: 0.7,
+            audioEnabled: true,
+            visualEffectsEnabled: true,
+            defaultDuration: 24,
+            preferredSite: "thigh",
+          };
+          savePreferences(defaults);
         },
-      ],
-    );
+      },
+    ]);
+  };
+
+  const getSiteEmoji = (site: string) => {
+    const siteEmojis = {
+      finger: "👆",
+      "upper-arm": "💪",
+      thigh: "🦵",
+      abdomen: "🤰",
+    };
+    return siteEmojis[site] || "🎯";
   };
 
   return (
-    <KeyboardAwareScrollViewCompat
-      style={styles.container}
-      contentContainerStyle={[
-        styles.scrollContent,
-        {
-          paddingTop: insets.top + Spacing["3xl"],
-          paddingBottom: tabBarHeight + Spacing["2xl"],
-        },
-      ]}
-    >
-      <ThemedText style={styles.title}>Settings</ThemedText>
-
-      <ThemedText style={styles.sectionTitle}>Haptic Preferences</ThemedText>
-      <Card style={styles.card}>
-        <View style={styles.settingRow}>
-          <ThemedText style={styles.settingLabel}>Haptic Intensity</ThemedText>
-        </View>
-        <View style={styles.sliderContainer}>
-          <ThemedText style={styles.sliderLabel}>Gentle</ThemedText>
-          <Slider
-            style={styles.slider}
-            minimumValue={0.1}
-            maximumValue={1}
-            value={hapticIntensity}
-            onValueChange={handleHapticSliderChange}
-            onSlidingComplete={handleHapticSliderComplete}
-            minimumTrackTintColor={Colors.light.primary}
-            maximumTrackTintColor={Colors.light.border}
-            thumbTintColor={Colors.light.primary}
-            testID="slider-haptic"
-          />
-          <ThemedText style={styles.sliderLabel}>Strong</ThemedText>
-        </View>
-
-        <View style={styles.divider} />
-
-        <View style={styles.settingRow}>
-          <View style={styles.settingInfo}>
-            <ThemedText style={styles.settingLabel}>Peak Style</ThemedText>
-            <ThemedText style={styles.settingDescription}>
-              How haptics behave during peak phase
-            </ThemedText>
-          </View>
-        </View>
-        <View style={styles.segmented}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.segButton,
-              preferences.peakStyle === "max" && styles.segButtonSelected,
-              pressed && styles.segButtonPressed,
-            ]}
-            onPress={() => handlePeakStyleChange("max")}
-            testID="button-peak-max"
-          >
-            <ThemedText
-              style={[
-                styles.segButtonText,
-                preferences.peakStyle === "max" && styles.segButtonTextSelected,
-              ]}
-            >
-              Max
-            </ThemedText>
-          </Pressable>
-          <Pressable
-            style={({ pressed }) => [
-              styles.segButton,
-              preferences.peakStyle === "snap" && styles.segButtonSelected,
-              pressed && styles.segButtonPressed,
-            ]}
-            onPress={() => handlePeakStyleChange("snap")}
-            testID="button-peak-snap"
-          >
-            <ThemedText
-              style={[
-                styles.segButtonText,
-                preferences.peakStyle === "snap" &&
-                  styles.segButtonTextSelected,
-              ]}
-            >
-              Snap
-            </ThemedText>
-          </Pressable>
-        </View>
-
-        {preferences.peakStyle === "snap" && (
-          <>
-            <View style={styles.divider} />
-
-            <View style={styles.settingRow}>
-              <ThemedText style={styles.settingLabel}>Snap Density</ThemedText>
-              <ThemedText style={styles.settingDescription}>
-                Controls frequency during peak (2-8 Hz)
-              </ThemedText>
-            </View>
-            <View style={styles.sliderContainer}>
-              <ThemedText style={styles.sliderLabel}>Sparse</ThemedText>
-              <Slider
-                style={styles.slider}
-                minimumValue={0.1}
-                maximumValue={1}
-                value={snapDensity}
-                onValueChange={handleSnapDensityChange}
-                onSlidingComplete={handleSnapDensityComplete}
-                minimumTrackTintColor={Colors.light.accent}
-                maximumTrackTintColor={Colors.light.border}
-                thumbTintColor={Colors.light.accent}
-                testID="slider-snap-density"
-              />
-              <ThemedText style={styles.sliderLabel}>Dense</ThemedText>
-            </View>
-          </>
-        )}
-
-        <View style={styles.divider} />
-
-        <View style={styles.settingRow}>
-          <View style={styles.settingInfo}>
-            <ThemedText style={styles.settingLabel}>
-              Advanced Haptics
-            </ThemedText>
-            <ThemedText style={styles.settingDescription}>
-              Enable experimental haptic patterns (Dev Build)
-            </ThemedText>
-          </View>
-          <Switch
-            value={!!preferences.useAdvancedHaptics}
-            onValueChange={handleAdvancedHapticsToggle}
-            trackColor={{
-              false: Colors.light.border,
-              true: Colors.light.accent,
-            }}
-            thumbColor={Colors.light.surface}
-            testID="switch-advanced-haptics"
-          />
-        </View>
-      </Card>
-
-      <ThemedText style={styles.sectionTitle}>Audio Preferences</ThemedText>
-      <Card style={styles.card}>
-        <View style={styles.settingRow}>
-          <View style={styles.settingInfo}>
-            <ThemedText style={styles.settingLabel}>Sound Effects</ThemedText>
-            <ThemedText style={styles.settingDescription}>
-              Play calming sounds during sessions
-            </ThemedText>
-          </View>
-          <Switch
-            value={preferences.audioEnabled}
-            onValueChange={handleAudioToggle}
-            trackColor={{
-              false: Colors.light.border,
-              true: Colors.light.accent,
-            }}
-            thumbColor={Colors.light.surface}
-            testID="switch-audio"
-          />
-        </View>
-
-        {preferences.audioEnabled && (
-          <>
-            <View style={styles.divider} />
-            <View style={styles.settingRow}>
-              <ThemedText style={styles.settingLabel}>Audio Volume</ThemedText>
-            </View>
-            <View style={styles.sliderContainer}>
-              <ThemedText style={styles.sliderLabel}>Low</ThemedText>
-              <Slider
-                style={styles.slider}
-                minimumValue={0.1}
-                maximumValue={1}
-                value={audioVolume}
-                onValueChange={handleAudioVolumeChange}
-                onSlidingComplete={handleAudioVolumeComplete}
-                minimumTrackTintColor={Colors.light.primary}
-                maximumTrackTintColor={Colors.light.border}
-                thumbTintColor={Colors.light.primary}
-                testID="slider-audio-volume"
-              />
-              <ThemedText style={styles.sliderLabel}>High</ThemedText>
-            </View>
-          </>
-        )}
-      </Card>
-
-      <ThemedText style={styles.sectionTitle}>Visual Preferences</ThemedText>
-      <Card style={styles.card}>
-        <View style={styles.settingRow}>
-          <View style={styles.settingText}>
-            <ThemedText style={styles.settingLabel}>Dragonfly</ThemedText>
-            <ThemedText style={styles.settingDescription}>
-              Choose your dragonfly style for sessions
-            </ThemedText>
-          </View>
-        </View>
-        <View style={styles.segmented}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.segButton,
-              preferences.dragonflyVariant === "blue" &&
-                styles.segButtonSelected,
-              pressed && styles.segButtonPressed,
-            ]}
-            onPress={() => updatePreferences({ dragonflyVariant: "blue" })}
-            testID="button-dragonfly-blue"
-          >
-            <ThemedText
-              style={[
-                styles.segButtonText,
-                preferences.dragonflyVariant === "blue" &&
-                  styles.segButtonTextSelected,
-              ]}
-            >
-              Blue
-            </ThemedText>
-          </Pressable>
-          <Pressable
-            style={({ pressed }) => [
-              styles.segButton,
-              preferences.dragonflyVariant === "white" &&
-                styles.segButtonSelected,
-              pressed && styles.segButtonPressed,
-            ]}
-            onPress={() => updatePreferences({ dragonflyVariant: "white" })}
-            testID="button-dragonfly-white"
-          >
-            <ThemedText
-              style={[
-                styles.segButtonText,
-                preferences.dragonflyVariant === "white" &&
-                  styles.segButtonTextSelected,
-              ]}
-            >
-              White
-            </ThemedText>
-          </Pressable>
-        </View>
-      </Card>
-
-      <ThemedText style={styles.sectionTitle}>Tuning</ThemedText>
-      <Card style={styles.card}>
-        <Pressable
-          style={({ pressed }) => [
-            styles.menuItem,
-            pressed && styles.menuItemPressed,
-          ]}
-          onPress={handleOpenDiscovery}
-          testID="button-discovery-wizard"
+    <SafeAreaView style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => navigation.goBack()}
         >
-          <Feather name="sliders" size={20} color={Colors.light.primary} />
-          <ThemedText style={styles.menuItemText}>Discovery Wizard</ThemedText>
-          <Feather
-            name="chevron-right"
-            size={20}
-            color={Colors.light.textSecondary}
-          />
-        </Pressable>
-        <ThemedText style={styles.menuItemDescription}>
-          Fine-tune settings for each site
-        </ThemedText>
-      </Card>
+          <Feather name="arrow-left" size={24} color="#2C3E50" />
+        </TouchableOpacity>
 
-      {preferences.debugMode && (
-        <>
-          <ThemedText style={styles.sectionTitle}>Developer</ThemedText>
-          <Card style={styles.card}>
-            <View style={styles.settingRow}>
-              <View style={styles.settingInfo}>
-                <ThemedText style={styles.settingLabel}>Debug Mode</ThemedText>
-                <ThemedText style={styles.settingDescription}>
-                  Show technical information during sessions
-                </ThemedText>
+        <Text style={styles.headerTitle}>Settings</Text>
+
+        <TouchableOpacity style={styles.resetButton} onPress={resetToDefaults}>
+          <Feather name="refresh-cw" size={20} color="#7F8C8D" />
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Session Stats */}
+        {sessionStats.totalSessions > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Your Progress</Text>
+            <View style={styles.statsGrid}>
+              <View style={styles.statCard}>
+                <Text style={styles.statNumber}>
+                  {sessionStats.totalSessions}
+                </Text>
+                <Text style={styles.statLabel}>Total Sessions</Text>
+              </View>
+              <View style={styles.statCard}>
+                <Text style={styles.statNumber}>
+                  {sessionStats.averageDuration}s
+                </Text>
+                <Text style={styles.statLabel}>Avg Duration</Text>
+              </View>
+              <View style={styles.statCard}>
+                <Text style={styles.statNumber}>
+                  {sessionStats.completionRate}%
+                </Text>
+                <Text style={styles.statLabel}>Completion Rate</Text>
+              </View>
+              <View style={styles.statCard}>
+                <Text style={styles.statNumber}>
+                  {getSiteEmoji(sessionStats.favoritesite)}
+                </Text>
+                <Text style={styles.statLabel}>Favorite Site</Text>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* Vibration Settings */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Haptic Feedback</Text>
+
+          <View style={styles.settingItem}>
+            <View style={styles.settingHeader}>
+              <Text style={styles.settingLabel}>Vibration Intensity</Text>
+              <TouchableOpacity
+                style={styles.testButton}
+                onPress={testVibration}
+              >
+                <Text style={styles.testButtonText}>Test</Text>
+              </TouchableOpacity>
+            </View>
+            <Slider
+              style={styles.slider}
+              minimumValue={0.1}
+              maximumValue={1.0}
+              value={preferences.vibrationIntensity}
+              onValueChange={(value) => {
+                setPreferences((prev) => ({
+                  ...prev,
+                  vibrationIntensity: value,
+                }));
+              }}
+              onSlidingComplete={(value) => {
+                savePreferences({ vibrationIntensity: value });
+                testVibration();
+              }}
+              minimumTrackTintColor="#3498DB"
+              maximumTrackTintColor="#ECF0F1"
+              thumbStyle={styles.sliderThumb}
+            />
+            <View style={styles.sliderLabels}>
+              <Text style={styles.sliderLabel}>Gentle</Text>
+              <Text style={styles.sliderLabel}>Strong</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Audio Settings */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Audio & Visual</Text>
+
+          <View style={styles.settingItem}>
+            <View style={styles.switchRow}>
+              <View style={styles.switchInfo}>
+                <Text style={styles.settingLabel}>Audio Feedback</Text>
+                <Text style={styles.settingDescription}>
+                  Play sounds during sessions
+                </Text>
               </View>
               <Switch
-                value={preferences.debugMode}
-                onValueChange={handleDebugToggle}
-                trackColor={{
-                  false: Colors.light.border,
-                  true: Colors.light.accent,
+                value={preferences.audioEnabled}
+                onValueChange={(value) => {
+                  setPreferences((prev) => ({ ...prev, audioEnabled: value }));
+                  savePreferences({ audioEnabled: value });
                 }}
-                thumbColor={Colors.light.surface}
-                testID="switch-debug"
+                trackColor={{ false: "#ECF0F1", true: "#3498DB" }}
+                thumbColor={preferences.audioEnabled ? "#FFFFFF" : "#BDC3C7"}
               />
             </View>
-          </Card>
-        </>
-      )}
+          </View>
 
-      <ThemedText style={styles.sectionTitle}>Information</ThemedText>
-      <Card style={styles.card}>
-        <Pressable
-          style={({ pressed }) => [
-            styles.menuItem,
-            pressed && styles.menuItemPressed,
-          ]}
-          onPress={() => navigation.navigate("About")}
-          testID="button-about"
-        >
-          <Feather name="info" size={20} color={Colors.light.textSecondary} />
-          <ThemedText style={styles.menuItemText}>About Alivio Ease</ThemedText>
-          <Feather
-            name="chevron-right"
-            size={20}
-            color={Colors.light.textSecondary}
-          />
-        </Pressable>
+          <View style={styles.settingItem}>
+            <View style={styles.switchRow}>
+              <View style={styles.switchInfo}>
+                <Text style={styles.settingLabel}>Visual Effects</Text>
+                <Text style={styles.settingDescription}>
+                  Animated backgrounds and dragonfly
+                </Text>
+              </View>
+              <Switch
+                value={preferences.visualEffectsEnabled}
+                onValueChange={(value) => {
+                  setPreferences((prev) => ({
+                    ...prev,
+                    visualEffectsEnabled: value,
+                  }));
+                  savePreferences({ visualEffectsEnabled: value });
+                }}
+                trackColor={{ false: "#ECF0F1", true: "#3498DB" }}
+                thumbColor={
+                  preferences.visualEffectsEnabled ? "#FFFFFF" : "#BDC3C7"
+                }
+              />
+            </View>
+          </View>
+        </View>
 
-        <View style={styles.divider} />
+        {/* Default Settings */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Default Session Settings</Text>
 
-        <Pressable
-          style={({ pressed }) => [
-            styles.menuItem,
-            pressed && styles.menuItemPressed,
-          ]}
-          onPress={() => navigation.navigate("DisclaimerModal")}
-          testID="button-disclaimer"
-        >
-          <Feather
-            name="file-text"
-            size={20}
-            color={Colors.light.textSecondary}
-          />
-          <ThemedText style={styles.menuItemText}>View Disclaimer</ThemedText>
-          <Feather
-            name="chevron-right"
-            size={20}
-            color={Colors.light.textSecondary}
-          />
-        </Pressable>
-      </Card>
+          <View style={styles.settingItem}>
+            <Text style={styles.settingLabel}>Default Duration</Text>
+            <View style={styles.durationButtons}>
+              {[18, 24, 30].map((duration) => (
+                <TouchableOpacity
+                  key={duration}
+                  style={[
+                    styles.durationButton,
+                    preferences.defaultDuration === duration &&
+                      styles.selectedDurationButton,
+                  ]}
+                  onPress={() => {
+                    setPreferences((prev) => ({
+                      ...prev,
+                      defaultDuration: duration,
+                    }));
+                    savePreferences({ defaultDuration: duration });
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.durationButtonText,
+                      preferences.defaultDuration === duration &&
+                        styles.selectedDurationButtonText,
+                    ]}
+                  >
+                    {duration}s
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
 
-      <ThemedText style={styles.sectionTitle}>Account</ThemedText>
-      <Card style={styles.card}>
-        <Pressable
-          style={({ pressed }) => [
-            styles.menuItem,
-            pressed && styles.menuItemPressed,
-          ]}
-          onPress={handleClearHistory}
-          testID="button-clear-history"
-        >
-          <Feather name="trash-2" size={20} color={Colors.light.warning} />
-          <ThemedText style={[styles.menuItemText, styles.warningText]}>
-            Clear History
-          </ThemedText>
-        </Pressable>
+          <View style={styles.settingItem}>
+            <Text style={styles.settingLabel}>Preferred Site</Text>
+            <View style={styles.siteButtons}>
+              {[
+                { id: "finger", name: "Finger", emoji: "👆" },
+                { id: "upper-arm", name: "Upper Arm", emoji: "💪" },
+                { id: "thigh", name: "Thigh", emoji: "🦵" },
+                { id: "abdomen", name: "Abdomen", emoji: "🤰" },
+              ].map((site) => (
+                <TouchableOpacity
+                  key={site.id}
+                  style={[
+                    styles.siteButton,
+                    preferences.preferredSite === site.id &&
+                      styles.selectedSiteButton,
+                  ]}
+                  onPress={() => {
+                    setPreferences((prev) => ({
+                      ...prev,
+                      preferredSite: site.id,
+                    }));
+                    savePreferences({ preferredSite: site.id });
+                  }}
+                >
+                  <Text style={styles.siteButtonEmoji}>{site.emoji}</Text>
+                  <Text
+                    style={[
+                      styles.siteButtonText,
+                      preferences.preferredSite === site.id &&
+                        styles.selectedSiteButtonText,
+                    ]}
+                  >
+                    {site.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </View>
 
-        <View style={styles.divider} />
+        {/* Data Management */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Data Management</Text>
 
-        <Pressable
-          style={({ pressed }) => [
-            styles.menuItem,
-            pressed && styles.menuItemPressed,
-          ]}
-          onPress={handleResetApp}
-          testID="button-reset-app"
-        >
-          <Feather name="refresh-cw" size={20} color="#E74C3C" />
-          <ThemedText style={[styles.menuItemText, styles.dangerText]}>
-            Reset App
-          </ThemedText>
-        </Pressable>
-      </Card>
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={clearSessionHistory}
+          >
+            <Feather name="trash-2" size={20} color="#E74C3C" />
+            <Text style={styles.actionButtonText}>Clear Session History</Text>
+          </TouchableOpacity>
+        </View>
 
-      <Pressable
-        onLongPress={() => handleDebugToggle(!preferences.debugMode)}
-        delayLongPress={3000}
-        testID="version-text"
-      >
-        <ThemedText style={styles.version}>Alivio Ease v0.15</ThemedText>
-      </Pressable>
-    </KeyboardAwareScrollViewCompat>
+        {/* About */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>About</Text>
+
+          <View style={styles.aboutCard}>
+            <Text style={styles.appName}>Alivio's Easel</Text>
+            <Text style={styles.appVersion}>Version 1.0.0</Text>
+            <Text style={styles.appDescription}>
+              Comfort-focused sensory distraction for medical procedures. Using
+              haptic feedback, visual animations, and audio cues to help reduce
+              anxiety and pain during injections.
+            </Text>
+          </View>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.light.background,
+    backgroundColor: "#F8F9FA",
   },
-  scrollContent: {
-    paddingHorizontal: Spacing.xl,
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    backgroundColor: "white",
+    borderBottomWidth: 1,
+    borderBottomColor: "#ECF0F1",
   },
-  title: {
-    ...Typography.headline,
-    color: Colors.light.text,
-    marginBottom: Spacing.xl,
+  backButton: {
+    width: 40,
+    height: 40,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: 20,
+    fontWeight: "600",
+    color: "#2C3E50",
+    textAlign: "center",
+  },
+  resetButton: {
+    width: 40,
+    height: 40,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  content: {
+    flex: 1,
+    paddingHorizontal: 20,
+  },
+  section: {
+    marginTop: 24,
   },
   sectionTitle: {
-    ...Typography.button,
-    color: Colors.light.textSecondary,
-    marginBottom: Spacing.sm,
-    marginLeft: Spacing.xs,
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#2C3E50",
+    marginBottom: 16,
   },
-  card: {
-    marginBottom: Spacing.xl,
+  statsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
   },
-  settingRow: {
+  statCard: {
+    width: "48%",
+    backgroundColor: "white",
+    padding: 16,
+    borderRadius: 12,
+    alignItems: "center",
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#ECF0F1",
+  },
+  statNumber: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: "#3498DB",
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: "#7F8C8D",
+    textAlign: "center",
+  },
+  settingItem: {
+    backgroundColor: "white",
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#ECF0F1",
+  },
+  settingHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  settingLabel: {
+    fontSize: 16,
+    fontWeight: "500",
+    color: "#2C3E50",
+  },
+  settingDescription: {
+    fontSize: 14,
+    color: "#7F8C8D",
+    marginTop: 2,
+  },
+  testButton: {
+    backgroundColor: "#3498DB",
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  testButtonText: {
+    fontSize: 14,
+    color: "white",
+    fontWeight: "500",
+  },
+  slider: {
+    width: "100%",
+    height: 40,
+  },
+  sliderThumb: {
+    backgroundColor: "#3498DB",
+    width: 24,
+    height: 24,
+  },
+  sliderLabels: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 8,
+  },
+  sliderLabel: {
+    fontSize: 12,
+    color: "#7F8C8D",
+  },
+  switchRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
-  settingInfo: {
+  switchInfo: {
     flex: 1,
   },
-  settingText: {
+  durationButtons: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 12,
+  },
+  durationButton: {
     flex: 1,
+    backgroundColor: "#ECF0F1",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginHorizontal: 4,
+    alignItems: "center",
   },
-  settingLabel: {
-    ...Typography.body,
-    color: Colors.light.text,
+  selectedDurationButton: {
+    backgroundColor: "#3498DB",
   },
-  settingDescription: {
-    ...Typography.caption,
-    color: Colors.light.textSecondary,
-    marginTop: Spacing.xs,
+  durationButtonText: {
+    fontSize: 16,
+    fontWeight: "500",
+    color: "#7F8C8D",
   },
-  sliderContainer: {
+  selectedDurationButtonText: {
+    color: "white",
+  },
+  siteButtons: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    marginTop: 12,
+  },
+  siteButton: {
+    width: "48%",
+    backgroundColor: "#ECF0F1",
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    marginBottom: 8,
+    alignItems: "center",
+  },
+  selectedSiteButton: {
+    backgroundColor: "#3498DB",
+  },
+  siteButtonEmoji: {
+    fontSize: 20,
+    marginBottom: 4,
+  },
+  siteButtonText: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#7F8C8D",
+  },
+  selectedSiteButtonText: {
+    color: "white",
+  },
+  actionButton: {
     flexDirection: "row",
     alignItems: "center",
-    marginTop: Spacing.sm,
-  },
-  slider: {
-    flex: 1,
-    height: 40,
-  },
-  sliderLabel: {
-    ...Typography.caption,
-    color: Colors.light.textSecondary,
-    width: 50,
-    textAlign: "center",
-  },
-  divider: {
-    height: 1,
-    backgroundColor: Colors.light.border,
-    marginVertical: Spacing.lg,
-    opacity: 0.6,
-  },
-  segmented: {
-    flexDirection: "row",
-    backgroundColor: Colors.light.surface,
-    borderRadius: BorderRadius.lg,
+    backgroundColor: "white",
+    padding: 16,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: Colors.light.border,
-    overflow: "hidden",
-    marginTop: Spacing.sm,
+    borderColor: "#ECF0F1",
   },
-  segButton: {
-    flex: 1,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    backgroundColor: "transparent",
-    alignItems: "center",
-  },
-  segButtonSelected: {
-    backgroundColor: Colors.light.primary,
-  },
-  segButtonPressed: {
-    opacity: 0.85,
-  },
-  segButtonText: {
-    ...Typography.caption,
-    color: Colors.light.text,
-  },
-  segButtonTextSelected: {
-    color: Colors.light.buttonText,
-  },
-  menuItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: Spacing.sm,
-  },
-  menuItemPressed: {
-    opacity: 0.7,
-  },
-  menuItemText: {
-    ...Typography.body,
-    color: Colors.light.text,
-    flex: 1,
-    marginLeft: Spacing.md,
-  },
-  menuItemDescription: {
-    ...Typography.caption,
-    color: Colors.light.textSecondary,
-    marginTop: Spacing.xs,
-  },
-  warningText: {
-    color: "#E67E22",
-  },
-  dangerText: {
+  actionButtonText: {
+    fontSize: 16,
     color: "#E74C3C",
+    marginLeft: 12,
+    fontWeight: "500",
   },
-  version: {
-    ...Typography.caption,
-    color: Colors.light.textSecondary,
+  aboutCard: {
+    backgroundColor: "white",
+    padding: 20,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#ECF0F1",
+    alignItems: "center",
+  },
+  appName: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#2C3E50",
+    marginBottom: 4,
+  },
+  appVersion: {
+    fontSize: 14,
+    color: "#7F8C8D",
+    marginBottom: 12,
+  },
+  appDescription: {
+    fontSize: 14,
+    color: "#34495E",
     textAlign: "center",
-    marginTop: Spacing.lg,
+    lineHeight: 20,
   },
 });
