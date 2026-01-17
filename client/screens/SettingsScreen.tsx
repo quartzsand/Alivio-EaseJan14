@@ -91,6 +91,13 @@ export default function SettingsScreen() {
     await updatePreferences({ peakStyle: style });
   };
 
+  const handleAdvancedHapticsToggle = async (value: boolean) => {
+    if (Platform.OS !== "web") {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    await updatePreferences({ useAdvancedHaptics: value });
+  };
+
   const handleOpenDiscovery = () => {
     navigation.navigate("DiscoveryWizard", {});
   };
@@ -260,81 +267,30 @@ export default function SettingsScreen() {
             </View>
           </>
         )}
-      </Card>
-      {/* Advanced haptics feature flag (leave OFF by default) */}
-      <View style={styles.settingRow}>
-        <ThemedText style={styles.settingLabel}>
-          Advanced Haptics (Dev Build)
-        </ThemedText>
-        <Switch
-          value={!!preferences.useAdvancedHaptics}
-          onValueChange={(v) => updatePreferences({ useAdvancedHaptics: v })}
-        />
-      </View>
 
-      {/* Peak style */}
-      <View style={styles.settingRow}>
-        <ThemedText style={styles.settingLabel}>Peak Style</ThemedText>
-        <View style={{ flexDirection: "row", gap: 10 }}>
-          <Pressable
-            style={[
-              styles.pill,
-              preferences.peakStyle !== "snap" && styles.pillActive,
-            ]}
-            onPress={() => updatePreferences({ peakStyle: "max" })}
-          >
-            <ThemedText>Max</ThemedText>
-          </Pressable>
+        <View style={styles.divider} />
 
-          <Pressable
-            style={[
-              styles.pill,
-              preferences.peakStyle === "snap" && styles.pillActive,
-            ]}
-            onPress={() => updatePreferences({ peakStyle: "snap" })}
-          >
-            <ThemedText>Snap</ThemedText>
-          </Pressable>
-        </View>
-      </View>
-
-      {/* Snap density slider (only when Snap selected) */}
-      {preferences.peakStyle === "snap" && (
-        <View style={styles.settingBlock}>
-          <ThemedText style={styles.settingLabel}>Snap Density</ThemedText>
-          <Slider
-            value={preferences.snapDensity01 ?? 0.5}
-            minimumValue={0.15}
-            maximumValue={1.0}
-            step={0.01}
-            onValueChange={(v) => updatePreferences({ snapDensity01: v })}
+        <View style={styles.settingRow}>
+          <View style={styles.settingInfo}>
+            <ThemedText style={styles.settingLabel}>
+              Advanced Haptics
+            </ThemedText>
+            <ThemedText style={styles.settingDescription}>
+              Enable experimental haptic patterns (Dev Build)
+            </ThemedText>
+          </View>
+          <Switch
+            value={!!preferences.useAdvancedHaptics}
+            onValueChange={handleAdvancedHapticsToggle}
+            trackColor={{
+              false: Colors.light.border,
+              true: Colors.light.accent,
+            }}
+            thumbColor={Colors.light.surface}
+            testID="switch-advanced-haptics"
           />
         </View>
-      )}
-
-      {/* Haptics intensity */}
-      <View style={styles.settingBlock}>
-        <ThemedText style={styles.settingLabel}>Haptics Intensity</ThemedText>
-        <Slider
-          value={preferences.hapticsIntensity01 ?? 0.85}
-          minimumValue={0.2}
-          maximumValue={1.0}
-          step={0.01}
-          onValueChange={(v) => updatePreferences({ hapticsIntensity01: v })}
-        />
-      </View>
-
-      {/* Audio volume */}
-      <View style={styles.settingBlock}>
-        <ThemedText style={styles.settingLabel}>Audio Volume</ThemedText>
-        <Slider
-          value={preferences.audioVolume01 ?? 0.6}
-          minimumValue={0.0}
-          maximumValue={1.0}
-          step={0.01}
-          onValueChange={(v) => updatePreferences({ audioVolume01: v })}
-        />
-      </View>
+      </Card>
 
       <ThemedText style={styles.sectionTitle}>Audio Preferences</ThemedText>
       <Card style={styles.card}>
@@ -392,48 +348,48 @@ export default function SettingsScreen() {
               Choose your dragonfly style for sessions
             </ThemedText>
           </View>
-          <View style={styles.segmented}>
-            <Pressable
-              style={({ pressed }) => [
-                styles.segButton,
+        </View>
+        <View style={styles.segmented}>
+          <Pressable
+            style={({ pressed }) => [
+              styles.segButton,
+              preferences.dragonflyVariant === "blue" &&
+                styles.segButtonSelected,
+              pressed && styles.segButtonPressed,
+            ]}
+            onPress={() => updatePreferences({ dragonflyVariant: "blue" })}
+            testID="button-dragonfly-blue"
+          >
+            <ThemedText
+              style={[
+                styles.segButtonText,
                 preferences.dragonflyVariant === "blue" &&
-                  styles.segButtonSelected,
-                pressed && styles.segButtonPressed,
+                  styles.segButtonTextSelected,
               ]}
-              onPress={() => updatePreferences({ dragonflyVariant: "blue" })}
-              testID="button-dragonfly-blue"
             >
-              <ThemedText
-                style={[
-                  styles.segButtonText,
-                  preferences.dragonflyVariant === "blue" &&
-                    styles.segButtonTextSelected,
-                ]}
-              >
-                Blue
-              </ThemedText>
-            </Pressable>
-            <Pressable
-              style={({ pressed }) => [
-                styles.segButton,
+              Blue
+            </ThemedText>
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [
+              styles.segButton,
+              preferences.dragonflyVariant === "white" &&
+                styles.segButtonSelected,
+              pressed && styles.segButtonPressed,
+            ]}
+            onPress={() => updatePreferences({ dragonflyVariant: "white" })}
+            testID="button-dragonfly-white"
+          >
+            <ThemedText
+              style={[
+                styles.segButtonText,
                 preferences.dragonflyVariant === "white" &&
-                  styles.segButtonSelected,
-                pressed && styles.segButtonPressed,
+                  styles.segButtonTextSelected,
               ]}
-              onPress={() => updatePreferences({ dragonflyVariant: "white" })}
-              testID="button-dragonfly-white"
             >
-              <ThemedText
-                style={[
-                  styles.segButtonText,
-                  preferences.dragonflyVariant === "white" &&
-                    styles.segButtonTextSelected,
-                ]}
-              >
-                White
-              </ThemedText>
-            </Pressable>
-          </View>
+              White
+            </ThemedText>
+          </Pressable>
         </View>
       </Card>
 
@@ -563,7 +519,7 @@ export default function SettingsScreen() {
       </Card>
 
       <Pressable
-        onLongPress={handleDebugToggle.bind(null, !preferences.debugMode)}
+        onLongPress={() => handleDebugToggle(!preferences.debugMode)}
         delayLongPress={3000}
         testID="version-text"
       >
@@ -646,9 +602,11 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
   },
   segButton: {
+    flex: 1,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
     backgroundColor: "transparent",
+    alignItems: "center",
   },
   segButtonSelected: {
     backgroundColor: Colors.light.primary,
