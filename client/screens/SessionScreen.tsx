@@ -1,4 +1,4 @@
-// client/screens/SessionScreen.tsx - COMPLETE FILE WITH ALL FEATURES
+// client/screens/SessionScreen.tsx - COMPLETE FILE
 import React, { useState, useEffect, useRef } from "react";
 import {
   View,
@@ -19,7 +19,6 @@ import { SensoryService, SensorySession } from "../services/SensoryService";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
-// Phase timing configuration for different durations
 const PHASE_CONFIGS = {
   18: { prep: 3, active: 12, cool: 3 },
   24: { prep: 4, active: 16, cool: 4 },
@@ -31,22 +30,18 @@ export default function SessionScreen() {
   const navigation = useNavigation();
   const route = useRoute();
 
-  // Get parameters from navigation
   const { preferences } = route.params || {};
   const sessionDuration = preferences?.defaultDuration || 24;
   const selectedSite = preferences?.preferredSite || "thigh";
 
-  // Initialize sensory service properly
   const [sensoryService] = useState(() => new SensoryService());
 
-  // Session state
   const [currentPhase, setCurrentPhase] = useState("idle");
   const [isRunning, setIsRunning] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState(sessionDuration);
   const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
   const [phaseTimeRemaining, setPhaseTimeRemaining] = useState(0);
 
-  // Animation values
   const dragonflyX = useRef(new Animated.Value(-100)).current;
   const dragonflyY = useRef(new Animated.Value(screenHeight * 0.33)).current;
   const backgroundOpacity = useRef(new Animated.Value(0)).current;
@@ -86,7 +81,6 @@ export default function SessionScreen() {
     setCurrentPhase(newPhase);
     setIsRunning(running);
 
-    // Set phase timing and trigger animations
     switch (newPhase) {
       case "prep":
         setPhaseTimeRemaining(phaseConfig.prep);
@@ -190,20 +184,16 @@ export default function SessionScreen() {
     );
   };
 
-  // Animation functions
   const startDragonflyAnimation = () => {
-    // Reset position
     dragonflyX.setValue(-100);
     dragonflyY.setValue(screenHeight * 0.33);
 
-    // Main flight across screen
     Animated.timing(dragonflyX, {
       toValue: screenWidth + 100,
       duration: sessionDuration * 1000,
       useNativeDriver: true,
     }).start();
 
-    // Wing flutter animation
     Animated.loop(
       Animated.sequence([
         Animated.timing(rotateValue, {
@@ -221,14 +211,12 @@ export default function SessionScreen() {
   };
 
   const startPrepAnimations = () => {
-    // Gentle background fade to light blue
     Animated.timing(backgroundOpacity, {
       toValue: 0.3,
       duration: 2000,
       useNativeDriver: false,
     }).start();
 
-    // Gentle vertical movement for dragonfly
     Animated.loop(
       Animated.sequence([
         Animated.timing(dragonflyY, {
@@ -246,14 +234,12 @@ export default function SessionScreen() {
   };
 
   const startActiveAnimations = () => {
-    // Background to green with pulse effect
     Animated.parallel([
       Animated.timing(backgroundOpacity, {
         toValue: 0.6,
         duration: 1000,
         useNativeDriver: false,
       }),
-      // Gentle scale pulse
       Animated.loop(
         Animated.sequence([
           Animated.timing(scaleValue, {
@@ -270,7 +256,6 @@ export default function SessionScreen() {
       ),
     ]).start();
 
-    // More energetic dragonfly movement
     Animated.loop(
       Animated.sequence([
         Animated.timing(dragonflyY, {
@@ -288,14 +273,12 @@ export default function SessionScreen() {
   };
 
   const startCoolAnimations = () => {
-    // Fade to cool purple
     Animated.timing(backgroundOpacity, {
       toValue: 0.4,
       duration: 2000,
       useNativeDriver: false,
     }).start();
 
-    // Dragonfly settles down
     Animated.timing(dragonflyY, {
       toValue: screenHeight * 0.33 + 30,
       duration: 1500,
@@ -304,7 +287,6 @@ export default function SessionScreen() {
   };
 
   const startCompleteAnimations = () => {
-    // Success celebration
     Animated.sequence([
       Animated.timing(scaleValue, {
         toValue: 1.2,
@@ -318,7 +300,6 @@ export default function SessionScreen() {
       }),
     ]).start();
 
-    // Dragonfly lands
     Animated.timing(dragonflyY, {
       toValue: screenHeight * 0.33 + 40,
       duration: 1000,
@@ -327,14 +308,12 @@ export default function SessionScreen() {
   };
 
   const resetAnimations = () => {
-    // Stop all animations
     dragonflyX.stopAnimation();
     dragonflyY.stopAnimation();
     backgroundOpacity.stopAnimation();
     scaleValue.stopAnimation();
     rotateValue.stopAnimation();
 
-    // Reset values
     dragonflyX.setValue(-100);
     dragonflyY.setValue(screenHeight * 0.33);
     backgroundOpacity.setValue(0);
@@ -345,15 +324,15 @@ export default function SessionScreen() {
   const getPhaseColor = () => {
     switch (currentPhase) {
       case "prep":
-        return "rgba(52, 152, 219, 0.3)"; // Blue
+        return "rgba(52, 152, 219, 0.3)";
       case "active":
-        return "rgba(46, 204, 113, 0.6)"; // Green
+        return "rgba(46, 204, 113, 0.6)";
       case "cool":
-        return "rgba(155, 89, 182, 0.4)"; // Purple
+        return "rgba(155, 89, 182, 0.4)";
       case "complete":
-        return "rgba(241, 196, 15, 0.5)"; // Yellow
+        return "rgba(241, 196, 15, 0.5)";
       default:
-        return "rgba(0, 0, 0, 0)"; // Transparent
+        return "rgba(0, 0, 0, 0)";
     }
   };
 
@@ -394,7 +373,6 @@ export default function SessionScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Animated Background */}
       <Animated.View
         style={[
           styles.backgroundOverlay,
@@ -405,12 +383,11 @@ export default function SessionScreen() {
         ]}
       />
 
-      {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top }]}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => navigation.goBack()}
-          disabled={isRunning} // Prevent leaving during session
+          disabled={isRunning}
         >
           <Feather
             name="x"
@@ -428,9 +405,7 @@ export default function SessionScreen() {
         <View style={styles.headerSpacer} />
       </View>
 
-      {/* Main Content */}
       <View style={styles.content}>
-        {/* Timer Display */}
         <Animated.View
           style={[
             styles.timerContainer,
@@ -449,7 +424,6 @@ export default function SessionScreen() {
           </Text>
         </Animated.View>
 
-        {/* Dragonfly Animation */}
         <Animated.View
           style={[
             styles.dragonflyContainer,
@@ -471,7 +445,6 @@ export default function SessionScreen() {
           <Text style={styles.dragonflyEmoji}>🦋</Text>
         </Animated.View>
 
-        {/* Session Status */}
         <View style={styles.statusContainer}>
           <Text style={styles.statusText}>{getPhaseDescription()}</Text>
 
@@ -495,7 +468,6 @@ export default function SessionScreen() {
             </View>
           )}
 
-          {/* Phase indicators */}
           {currentPhase !== "idle" && (
             <View style={styles.phaseIndicators}>
               <View
@@ -527,7 +499,6 @@ export default function SessionScreen() {
         </View>
       </View>
 
-      {/* Bottom Controls */}
       <View style={styles.bottomContainer}>
         {!isRunning ? (
           <TouchableOpacity style={styles.startButton} onPress={startSession}>

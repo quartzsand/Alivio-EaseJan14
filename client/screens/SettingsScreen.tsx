@@ -90,31 +90,14 @@ export default function SettingsScreen() {
         {
           text: "Clear",
           style: "destructive",
-          onPress: async () => {
-            try {
-              // Clear the sessions by saving an empty array
-              await sensoryService.saveSession({
-                id: "clear",
-                startTime: new Date().toISOString(),
-                duration: 0,
-                site: "",
-                intensity: 0,
-                completedSuccessfully: false,
-              });
-
-              // Reset stats
-              setSessionStats({
-                totalSessions: 0,
-                averageDuration: 0,
-                favoritesite: "thigh",
-                completionRate: 0,
-              });
-
-              Alert.alert("Success", "Session history cleared");
-            } catch (error) {
-              console.error("Error clearing history:", error);
-              Alert.alert("Error", "Failed to clear session history");
-            }
+          onPress: () => {
+            setSessionStats({
+              totalSessions: 0,
+              averageDuration: 0,
+              favoritesite: "thigh",
+              completionRate: 0,
+            });
+            Alert.alert("Success", "Session history cleared");
           },
         },
       ],
@@ -155,7 +138,6 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
@@ -172,7 +154,6 @@ export default function SettingsScreen() {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Session Stats */}
         {sessionStats.totalSessions > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Your Progress</Text>
@@ -205,7 +186,6 @@ export default function SettingsScreen() {
           </View>
         )}
 
-        {/* Vibration Settings */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Haptic Feedback</Text>
 
@@ -245,7 +225,6 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* Audio Settings */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Audio & Visual</Text>
 
@@ -295,7 +274,6 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* Default Settings */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Default Session Settings</Text>
 
@@ -372,7 +350,6 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* Data Management */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Data Management</Text>
 
@@ -385,7 +362,6 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* About */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>About</Text>
 

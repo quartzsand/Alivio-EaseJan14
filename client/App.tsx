@@ -1,11 +1,11 @@
-// App.tsx - COMPLETE FILE WITH PROPER NAVIGATION
+// App.tsx - CORRECTED VERSION
 import React from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 
-// Import screens using the correct paths
+// CORRECT IMPORT PATHS - Add quotes
 import HomeScreen from "./client/screens/HomeScreen";
 import SessionScreen from "./client/screens/SessionScreen";
 import SettingsScreen from "./client/screens/SettingsScreen";
@@ -36,7 +36,7 @@ export default function App() {
             name="Session"
             component={SessionScreen}
             options={{
-              gestureEnabled: false, // Prevent accidental dismissal during session
+              gestureEnabled: false,
               title: "Comfort Session",
             }}
           />

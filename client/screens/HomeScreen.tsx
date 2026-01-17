@@ -1,4 +1,4 @@
-// client/screens/HomeScreen.tsx - COMPLETE FILE WITH ALL FEATURES
+// client/screens/HomeScreen.tsx - COMPLETE FILE
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -64,7 +64,6 @@ export default function HomeScreen() {
       const stats = await sensoryService.getSessionStats();
       setSessionStats(stats);
 
-      // Set favorite site as default if available
       if (stats.favoritesite && stats.totalSessions > 0) {
         setSelectedSite(stats.favoritesite);
       }
@@ -114,12 +113,7 @@ export default function HomeScreen() {
       Alert.alert(
         "Recent Sessions",
         `Your last ${recentSessions.length} sessions:\n\n${historyText}`,
-        [
-          {
-            text: "Close",
-            style: "cancel",
-          },
-        ],
+        [{ text: "Close", style: "cancel" }],
       );
     } catch (error) {
       console.error("Error showing session history:", error);
@@ -263,7 +257,6 @@ export default function HomeScreen() {
             })}
           </View>
 
-          {/* Duration explanation */}
           <View style={styles.durationExplanation}>
             <Text style={styles.explanationText}>
               {selectedDuration === 18 &&
